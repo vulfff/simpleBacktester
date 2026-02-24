@@ -1,0 +1,334 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #0b0c10;
+  color: #e5e7eb;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 2.5rem auto 4rem;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.25rem;
+}
+
+.header p {
+  margin: 0;
+  color: #9ca3af;
+}
+
+.nav {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.nav button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 10px;
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  color: #e5e7eb;
+}
+
+.nav button:hover {
+  border-color: #22d3ee;
+}
+
+.card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* inner grids should be constrained and centered */
+.card .grid,
+.card .two-column,
+.card .data-method-container,
+.card .strategies-container {
+  width: 100%;
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* make form fields full-width but keep labels above */
+.card .field {
+  width: 100%;
+}
+
+/* center simple card headings */
+.card h2,
+.card p {
+  text-align: center;
+}
+
+/* Constrain card width and ensure centered layout inside container */
+.container > .card,
+.container .card {
+  width: 100%;
+  max-width: 900px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.field input,
+.field select,
+.field textarea {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  color: #e5e7eb;
+}
+
+.field textarea {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 160px;
+  resize: vertical;
+}
+
+.two-column {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-bottom: 1.5rem;
+}
+
+.primary {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  border: none;
+  border-radius: 999px;
+  padding: 0.75rem 1.6rem;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.schema {
+  background: #0b1120;
+  border: 1px dashed #334155;
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  color: #93c5fd;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+
+.alert {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+}
+
+.alert.error {
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+.result {
+  margin-top: 1.5rem;
+}
+
+.result pre {
+  background: #0b1120;
+  border-radius: 12px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.data-method-container {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.data-method-container .grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0;
+}
+
+.data-method-container .field {
+  font-size: 0.875rem;
+}
+
+.data-method-container .field span {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.data-method-container .field input,
+.data-method-container .field select {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.875rem;
+}
+
+.strategies-container {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.strategies-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.add-strategy-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  color: #22d3ee;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.add-strategy-btn:hover {
+  background: #334155;
+  border-color: #22d3ee;
+}
+
+.strategy-item {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.strategy-item:last-child {
+  margin-bottom: 0;
+}
+
+.strategy-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.remove-strategy-btn {
+  background: transparent;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-strategy-btn:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.strategy-item .grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0;
+}
+
+.strategy-item .field {
+  font-size: 0.875rem;
+}
+
+.strategy-item .field span {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.strategy-item .field input,
+.strategy-item .field select,
+.strategy-item .field textarea {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.875rem;
+}
+
+.strategy-item .field textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.strategy-item .field.full-width {
+  grid-column: 1 / -1;
+}
+
+/* view: used by inner views to avoid nesting the global .container */
+.view {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 1rem;
+}
+
+.view > h2,
+.view > p {
+  text-align: center;
+}
