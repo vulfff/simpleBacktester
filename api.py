@@ -83,6 +83,322 @@ def strategies_list() -> Dict[str, Any]:
     return {"strategies": list_strategies()}
 
 
+# ── AI Strategy Builder ───────────────────────────────────────────────────────
+
+class AIStrategyRequest(BaseModel):
+    """Request model for AI strategy generation."""
+    prompt: str = Field(
+        ...,
+        description="Natural language description of the trading strategy. "
+                    "E.g., 'Buy when price crosses above the 50-day moving average and RSI is below 70'"
+    )
+    temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Controls AI creativity (0.0=deterministic, 1.0=creative)"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="Password if LLM key is encrypted in database"
+    )
+
+
+class AIStrategyResponse(BaseModel):
+    """Response model for AI strategy generation."""
+    name: str
+    rules: List[Dict[str, Any]]
+    warnings: List[str] = Field(default_factory=list)
+
+
+@app.post("/ai/build-strategy", response_model=AIStrategyResponse)
+def ai_build_strategy(request: AIStrategyRequest) -> AIStrategyResponse:
+    """
+    Generate a trading strategy from natural language description.
+    
+    Reads LLM provider configuration (API key, model, provider) from database.
+    Supports: Anthropic, OpenAI, Grok, Google Gemini.
+    
+    Example prompt:
+    "Create a moving average crossover strategy. Buy when 20-period SMA crosses 
+     above 50-period SMA. Sell when it crosses back below. Use 1.0 quantity per trade."
+    """
+    from ai_strategy_builder import get_ai_provider
+    
+    try:
+        # Get provider from database (with optional password for decryption)
+        if request.password:
+            provider = get_ai_provider_with_password(request.password)
+        else:
+            provider = get_ai_provider()
+        
+        strategy = provider.build_from_prompt(
+            user_prompt=request.prompt,
+            temperature=request.temperature
+        )
+        
+        # Validate the generated strategy
+        is_valid, warnings = provider.validate_strategy(strategy)
+        
+        if not is_valid:
+            raise HTTPException(
+                422,
+                f"AI generated invalid strategy: {warnings[0] if warnings else 'Unknown error'}"
+            )
+        
+        return AIStrategyResponse(
+            name=strategy.get("name", "AI-Generated Strategy"),
+            rules=strategy.get("rules", []),
+            warnings=warnings
+        )
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to generate strategy: {str(exc)}") from exc
+
+
+def get_ai_provider_with_password(password: str):
+    """Helper to get AI provider with password-decrypted keys."""
+    from ai_strategy_builder import AnthropicProvider, OpenAIProvider, GrokProvider, GeminiProvider
+    
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT service, model_name, model_key, protected FROM api_keys LIMIT 1")
+    row = cur.fetchone()
+    conn.close()
+    
+    if not row:
+        raise ValueError("No AI provider configured in database")
+    
+    provider_name = row["service"]
+    model_name = row["model_name"]
+    is_protected = bool(row["protected"])
+    enc_key = row["model_key"]
+    
+    # Decrypt if needed
+    if is_protected:
+        try:
+            api_key = decrypt_with_password(password, enc_key)
+        except Exception:
+            raise ValueError("Failed to decrypt LLM API key. Check your password.")
+    else:
+        import base64
+        try:
+            api_key = base64.b64decode(enc_key).decode()
+        except Exception:
+            api_key = enc_key
+    
+    # Map provider
+    PROVIDERS = {
+        "anthropic": AnthropicProvider,
+        "openai": OpenAIProvider,
+        "grok": GrokProvider,
+        "gemini": GeminiProvider,
+    }
+    
+    ProviderClass = PROVIDERS.get(provider_name.lower())
+    if not ProviderClass:
+        raise ValueError(f"Unknown provider: {provider_name}")
+    
+    return ProviderClass(api_key=api_key, model_name=model_name)
+
+
+@app.get("/ai/schema")
+def ai_strategy_schema() -> Dict[str, Any]:
+    """
+    Return the strategy schema and supported AI providers.
+    
+    Shows:
+    - Available operand types (price, sma, ema, rsi, macd, bollinger, etc.)
+    - Available operators (>, <, cross_above, etc.)
+    - Available rule roles (entry_long, exit_long, etc.)
+    - Supported AI providers and their recommended models
+    - Expected JSON structure
+    """
+    from ai_strategy_builder import StrategySchema
+    
+    return {
+        "operand_types": StrategySchema.OPERAND_TYPES,
+        "operators": StrategySchema.OPERATORS,
+        "rule_roles": StrategySchema.RULE_ROLES,
+        "price_fields": StrategySchema.PRICE_FIELDS,
+        "exit_condition_types": StrategySchema.EXIT_CONDITION_TYPES,
+        "timing_modes": StrategySchema.TIMING_MODES,
+        "supported_providers": {
+            "anthropic": {
+                "name": "Anthropic Claude",
+                "models": [
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-opus-20240229",
+                    "claude-3-sonnet-20240229",
+                    "claude-3-haiku-20240307"
+                ],
+                "api_key_format": "sk-ant-...",
+                "get_key_url": "https://console.anthropic.com/?cpuhc=1"
+            },
+            "openai": {
+                "name": "OpenAI GPT",
+                "models": [
+                    "gpt-4-turbo",
+                    "gpt-4",
+                    "gpt-4o",
+                    "gpt-3.5-turbo"
+                ],
+                "api_key_format": "sk-...",
+                "get_key_url": "https://platform.openai.com/api-keys"
+            },
+            "grok": {
+                "name": "xAI Grok",
+                "models": [
+                    "grok-2",
+                    "grok-beta"
+                ],
+                "api_key_format": "xai-...",
+                "get_key_url": "https://console.x.ai"
+            },
+            "gemini": {
+                "name": "Google Gemini",
+                "models": [
+                    "gemini-2.0-flash",
+                    "gemini-1.5-pro",
+                    "gemini-1.5-flash"
+                ],
+                "api_key_format": "AIza...",
+                "get_key_url": "https://aistudio.google.com/app/apikey"
+            }
+        },
+        "example_prompt": "Buy when 20-period EMA crosses above 50-period EMA. Sell when RSI is above 70.",
+        "note": "Configure your preferred LLM provider in the Key Manager before using this endpoint."
+    }
+
+
+# ── AI Indicator Builder ───────────────────────────────────────────────────────
+
+class AIIndicatorRequest(BaseModel):
+    """Request model for AI indicator generation."""
+    prompt: str = Field(
+        ...,
+        description="Natural language description of the indicator. "
+                    "E.g., 'RSI oversold signal that returns 1 when below 30'"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="Password if LLM key is encrypted in database"
+    )
+
+
+class AIIndicatorResponse(BaseModel):
+    """Response model for AI indicator generation."""
+    name: str
+    description: str
+    expr: Dict[str, Any]
+    color: str = "#3b82f6"
+
+
+@app.post("/ai/build-indicator", response_model=AIIndicatorResponse)
+def ai_build_indicator(request: AIIndicatorRequest) -> AIIndicatorResponse:
+    """
+    Generate a technical indicator from natural language description.
+    
+    Reads LLM provider configuration from database.
+    Returns an indicator expression tree that can be used in strategy conditions.
+    
+    Example prompt:
+    "RSI oversold detector that returns 1 when RSI(14) is below 30, else 0"
+    
+    Returns:
+    {
+      "name": "RSI Oversold",
+      "description": "...",
+      "expr": { expression tree },
+      "color": "#3b82f6"
+    }
+    """
+    from ai_indicator_builder import build_indicator_from_prompt
+    
+    try:
+        # Get provider from database
+        if request.password:
+            provider = get_ai_provider_with_password(request.password)
+        else:
+            provider = get_ai_provider()
+        
+        indicator = build_indicator_from_prompt(
+            user_prompt=request.prompt,
+            provider=provider
+        )
+        
+        # Validate required fields
+        if "name" not in indicator or "expr" not in indicator:
+            raise HTTPException(422, "Generated indicator missing required fields")
+        
+        return AIIndicatorResponse(
+            name=indicator.get("name", "AI-Generated Indicator"),
+            description=indicator.get("description", ""),
+            expr=indicator.get("expr", {}),
+            color=indicator.get("color", "#3b82f6")
+        )
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to generate indicator: {str(exc)}") from exc
+
+
+@app.get("/ai/indicator-schema")
+def ai_indicator_schema() -> Dict[str, Any]:
+    """
+    Return indicator expression tree schema and examples.
+    
+    Shows:
+    - Available operand types for indicators
+    - Expression tree node types (operand, const, binop, unop, clamp, ifelse)
+    - Mathematical operations supported
+    - Example indicator expressions
+    """
+    return {
+        "operand_types": [
+            "price", "lookback", "sma", "ema", "rsi", "macd", "bollinger"
+        ],
+        "expression_node_types": [
+            "const (constant value)",
+            "operand (technical indicator or price)",
+            "binop (binary operation: +, -, *, /, **, %)",
+            "unop (unary operation: neg, abs, sqrt, log)",
+            "clamp (constrain value between lo and hi)",
+            "ifelse (conditional: if cond_left cond_op cond_right then ... else ...)"
+        ],
+        "binary_operators": ["+", "-", "*", "/", "**", "%"],
+        "unary_operators": ["neg", "abs", "sqrt", "log"],
+        "condition_operators": [">", "<", ">=", "<=", "==", "!="],
+        "example_indicators": {
+            "rsi_oversold": {
+                "prompt": "RSI oversold signal: returns 1 when RSI(14) drops below 30",
+                "use_case": "Entry signal detector"
+            },
+            "ma_distance": {
+                "prompt": "Distance from 20-period SMA as percentage",
+                "use_case": "Volatility/deviation measurement"
+            },
+            "momentum_pct": {
+                "prompt": "Price momentum over last 5 bars as percentage change",
+                "use_case": "Trend strength measurement"
+            },
+            "volume_ratio": {
+                "prompt": "Current volume divided by 20-period average volume",
+                "use_case": "Volume confirmation"
+            }
+        },
+        "note": "Indicators generate expression trees that can be used in rule conditions or as custom operands"
+    }
+
+
+
 # ── Backtest (upload or pre-fetched JSON data) ────────────────────────────────
 
 @app.post("/backtest/upload", response_model=BacktestResult)

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { AIStrategyChat } from './AIStrategyChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -83,11 +84,11 @@ const EXIT_BLOCKS = [
     items: [
       { id: 'take_profit_pct',  emoji: '🎯', label: 'Take profit at +X%',    desc: 'Exit when position profit reaches this percentage',
         kind: 'exit_condition', exitType: 'take_profit_pct', value: 5 },
-      { id: 'stop_loss_pct',   emoji: '🛑', label: 'Stop loss at −X%',       desc: 'Exit when position loss reaches this percentage',
+      { id: 'stop_loss_pct',   emoji: '🛑', label: 'Stop loss at -X%',       desc: 'Exit when position loss reaches this percentage',
         kind: 'exit_condition', exitType: 'stop_loss_pct', value: 3 },
       { id: 'take_profit_abs', emoji: '💵', label: 'Take profit at +$X',     desc: 'Exit when absolute profit reaches this $ value',
         kind: 'exit_condition', exitType: 'take_profit_abs', value: 500 },
-      { id: 'stop_loss_abs',   emoji: '💸', label: 'Stop loss at −$X',       desc: 'Exit when absolute loss reaches this $ value',
+      { id: 'stop_loss_abs',   emoji: '💸', label: 'Stop loss at -$X',       desc: 'Exit when absolute loss reaches this $ value',
         kind: 'exit_condition', exitType: 'stop_loss_abs', value: 200 },
     ]
   },
@@ -97,7 +98,7 @@ const EXIT_BLOCKS = [
     items: [
       { id: 'bars_held',   emoji: '⏱️', label: 'After N bars in trade',        desc: 'Exit after being in the position for N candles',
         kind: 'exit_condition', exitType: 'bars_held', value: 10 },
-      { id: 'time_of_day', emoji: '🕐', label: 'At a specific hour (UTC)',     desc: 'Trigger at a certain hour of the day (0–23)',
+      { id: 'time_of_day', emoji: '🕐', label: 'At a specific hour (UTC)',     desc: 'Trigger at a certain hour of the day (0-23)',
         kind: 'exit_condition', exitType: 'time_of_day', value: 16 },
       { id: 'day_of_week', emoji: '📅', label: 'On a specific day of the week', desc: 'Trigger only on Mon / Tue / etc.',
         kind: 'exit_condition', exitType: 'day_of_week', value: 5 },
@@ -171,7 +172,7 @@ const PRICE_FIELDS = ['bid','ask','mid','volume'];
 
 function OperandEditor({ operand, onChange, label }) {
   const TYPES = ['price','lookback','sma','ema','rsi','macd','bollinger','constant'];
-  const TYPE_LABELS = { price:'Current Price', lookback:'Price N bars ago', sma:'SMA', ema:'EMA (Fast Average)', rsi:'RSI (0–100)', macd:'MACD', bollinger:'Bollinger Band', constant:'Fixed Number' };
+  const TYPE_LABELS = { price:'Current Price', lookback:'Price N bars ago', sma:'SMA', ema:'EMA (Fast Average)', rsi:'RSI (0-100)', macd:'MACD', bollinger:'Bollinger Band', constant:'Fixed Number' };
   const set = (k, v) => onChange({ ...operand, [k]: v });
   return (
     <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
@@ -224,11 +225,11 @@ function OperandEditor({ operand, onChange, label }) {
 function ExitConditionEditor({ cond, onChange }) {
   const meta = {
     take_profit_pct:  { pre: 'Take profit at +', suf: '% profit',            min: 0.1, step: 0.1 },
-    stop_loss_pct:    { pre: 'Stop loss at −',   suf: '% loss',              min: 0.1, step: 0.1 },
+    stop_loss_pct:    { pre: 'Stop loss at -',   suf: '% loss',              min: 0.1, step: 0.1 },
     take_profit_abs:  { pre: 'Take profit at +$', suf: ' profit',            min: 1,   step: 1 },
-    stop_loss_abs:    { pre: 'Stop loss at −$',   suf: ' loss',              min: 1,   step: 1 },
+    stop_loss_abs:    { pre: 'Stop loss at -$',   suf: ' loss',              min: 1,   step: 1 },
     bars_held:        { pre: 'Exit after',        suf: ' bars in trade',     min: 1,   step: 1 },
-    time_of_day:      { pre: 'At hour',           suf: ':00 UTC  (0–23)',    min: 0,   step: 1, max: 23 },
+    time_of_day:      { pre: 'At hour',           suf: ':00 UTC  (0-23)',    min: 0,   step: 1, max: 23 },
     day_of_week:      { pre: 'On',                suf: '',                   isDow: true },
   }[cond.exitType] || { pre: 'Value:', suf: '', min: 0, step: 1 };
 
@@ -484,12 +485,38 @@ export default function StrategyBuilder() {
   const [saving, setSaving]           = useState(false);
   const [showJson, setShowJson]       = useState(false);
   const [customIndicators, setCIs]    = useState([]);
+  const [mode, setMode]               = useState('build'); // 'build' | 'ai-strategy' | 'ai-indicator'
+  const [aiGeneratedStrategy, setAiGeneratedStrategy] = useState(null);
+  const [aiWarnings, setAiWarnings]   = useState([]);
 
   useEffect(() => { fetch(`${API_BASE}/db/indicators`).then(r=>r.json()).then(d=>setCIs(d.indicators||[])).catch(()=>{}); }, []);
 
   const addRule = (role = 'entry_long') => { const r = defaultRule(role); setRules(p=>[...p,r]); setActiveId(r._id); };
   const updateRule = useCallback(u => setRules(p => p.map(r => r._id===u._id?u:r)), []);
   const deleteRule = id => { const rest = rules.filter(r=>r._id!==id); setRules(rest); if(activeId===id) setActiveId(rest[0]?._id??null); };
+
+  // Handle AI-generated strategies
+  const handleStrategyGenerated = (aiResult) => {
+    setAiGeneratedStrategy(aiResult);
+    setAiWarnings(aiResult.warnings || []);
+    // Convert AI-generated rules to our internal format
+    const convertedRules = (aiResult.rules || []).map(r => ({
+      _id: uid(),
+      name: r.name,
+      role: r.role,
+      conditions: (r.conditions || []).map(c => ({
+        _id: uid(),
+        ...c
+      })),
+      timing: r.timing || 'on_change',
+      quantity: r.quantity || 1
+    }));
+    if (convertedRules.length > 0) {
+      setRules(convertedRules);
+      setActiveId(convertedRules[0]._id);
+      setMode('build');
+    }
+  };
 
   const payload = ruleSetToJson(ruleSetName, rules);
   const warnings = validateRules(rules);
@@ -516,7 +543,97 @@ export default function StrategyBuilder() {
       <h2>Strategy Builder</h2>
       <p>Build trading rules. Every entry needs a matching exit rule — warnings will appear if something is missing.</p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '1.5rem 0 1rem', flexWrap: 'wrap' }}>
+      {/* Mode selector */}
+      <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0 1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
+        <button
+          onClick={() => setMode('build')}
+          style={{
+            padding: '8px 16px',
+            background: mode === 'build' ? '#3b82f6' : '#1e293b',
+            border: 'none',
+            borderRadius: 6,
+            color: mode === 'build' ? '#ffffff' : '#9ca3af',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: mode === 'build' ? 600 : 400
+          }}
+        >
+          ◆ Manual Builder
+        </button>
+        <button
+          onClick={() => setMode('ai-strategy')}
+          style={{
+            padding: '8px 16px',
+            background: mode === 'ai-strategy' ? '#3b82f6' : '#1e293b',
+            border: 'none',
+            borderRadius: 6,
+            color: mode === 'ai-strategy' ? '#ffffff' : '#9ca3af',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: mode === 'ai-strategy' ? 600 : 400
+          }}
+        >
+          🤖 AI Strategy
+        </button>
+      </div>
+
+      {/* AI Strategy Mode */}
+      {mode === 'ai-strategy' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, minHeight: 600 }}>
+          <AIStrategyChat onStrategyGenerated={handleStrategyGenerated} />
+          <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 12, padding: 16, overflow: 'auto' }}>
+            {aiGeneratedStrategy ? (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <h3 style={{ fontSize: '1rem', color: '#e5e7eb', marginBottom: 8 }}>Generated Strategy</h3>
+                  <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: 12 }}>
+                    Name: <strong style={{ color: '#e5e7eb' }}>{aiGeneratedStrategy.name}</strong>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>
+                    Rules: <strong style={{ color: '#3b82f6' }}>{aiGeneratedStrategy.rules?.length || 0}</strong>
+                  </div>
+                </div>
+                {aiWarnings.length > 0 && (
+                  <div style={{ marginBottom: 16, padding: 12, background: 'rgba(245,158,11,0.08)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.3)' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#fbbf24', marginBottom: 8 }}>⚠️ Warnings:</div>
+                    {aiWarnings.map((w, i) => (
+                      <div key={i} style={{ fontSize: '0.8rem', color: '#fcd34d', marginBottom: 4 }}>• {w}</div>
+                    ))}
+                  </div>
+                )}
+                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#93c5fd', fontSize: '0.7rem', overflow: 'auto', maxHeight: 300 }}>
+                  {JSON.stringify(aiGeneratedStrategy, null, 2)}
+                </pre>
+                <button
+                  onClick={() => setMode('build')}
+                  style={{
+                    marginTop: 12,
+                    padding: '8px 16px',
+                    background: '#34d399',
+                    border: 'none',
+                    borderRadius: 6,
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    width: '100%'
+                  }}
+                >
+                  Edit in Manual Builder
+                </button>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
+                Generated strategy will appear here
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Manual Builder Mode */}
+      {mode === 'build' && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '1.5rem 0 1rem', flexWrap: 'wrap' }}>
         <input value={ruleSetName} onChange={e => setRuleSetName(e.target.value)}
           style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '7px 14px', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none', minWidth: 160 }} />
         <button type="button" style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
@@ -563,7 +680,7 @@ export default function StrategyBuilder() {
           })}
         </aside>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
           {!activeRule ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#4b5563', gap: 8 }}>
               <span style={{ fontSize: '2rem' }}>◇</span>
@@ -573,7 +690,9 @@ export default function StrategyBuilder() {
             <RuleEditor key={activeRule._id} rule={activeRule} onChange={updateRule} onDelete={() => deleteRule(activeRule._id)} customIndicators={customIndicators} />
           )}
         </div>
-      </div>
+        </div>
+        </>
+      )}
     </div>
   );
 }

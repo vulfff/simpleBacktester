@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { AIIndicatorChat } from './AIIndicatorChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -315,6 +316,7 @@ export default function IndicatorBuilder() {
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
   const [filter, setFilter]         = useState('');
+  const [mode, setMode]             = useState('build'); // 'build' | 'ai-indicator'
 
   useEffect(() => {
     setLoading(true);
@@ -396,12 +398,46 @@ export default function IndicatorBuilder() {
     <div className="view">
       <style>{`
         .ib2-wrap { display: flex; gap: 16px; align-items: flex-start; margin-top: 1.5rem; }
-        .ib2-palette { flex-shrink: 0; width: 280px; position: sticky; top: 0; max-height: calc(100vh - 80px); overflow-y: auto; }
-        .ib2-main { flex: 1; min-width: 0; }
+        .ib2-palette { flex-shrink: 0; width: 280px; position: sticky; top: 0; max-height: calc(100vh - 200px); overflow-y: auto; }
+        .ib2-main { flex: 1; min-width: 0; max-height: calc(100vh - 200px); overflow-y: auto; }
         @media (max-width: 700px) { .ib2-wrap { flex-direction: column; } .ib2-palette { width: 100%; position: static; max-height: 320px; } }
       `}</style>
       <h2>Indicator Builder</h2>
       <p>Drag building blocks onto your indicator canvas. Each indicator is a reusable signal you can reference in your strategies.</p>
+
+      {/* Mode selector */}
+      <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0 1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
+        <button
+          onClick={() => setMode('build')}
+          style={{
+            padding: '8px 16px',
+            background: mode === 'build' ? '#3b82f6' : '#1e293b',
+            border: 'none',
+            borderRadius: 6,
+            color: mode === 'build' ? '#ffffff' : '#9ca3af',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: mode === 'build' ? 600 : 400
+          }}
+        >
+          ◆ Manual Builder
+        </button>
+        <button
+          onClick={() => setMode('ai-indicator')}
+          style={{
+            padding: '8px 16px',
+            background: mode === 'ai-indicator' ? '#3b82f6' : '#1e293b',
+            border: 'none',
+            borderRadius: 6,
+            color: mode === 'ai-indicator' ? '#ffffff' : '#9ca3af',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: mode === 'ai-indicator' ? 600 : 400
+          }}
+        >
+          🤖 AI Indicator
+        </button>
+      </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <button style={{ ...pillStyle, background: 'linear-gradient(135deg,#6366f1,#22d3ee)', color: '#0f172a', fontWeight: 700, border: 'none' }} onClick={addIndicator}>
@@ -423,6 +459,21 @@ export default function IndicatorBuilder() {
 
       {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', color: '#fca5a5', marginBottom: 14, fontSize: '0.87rem' }}>{error}</div>}
 
+      {/* AI Indicator Mode */}
+      {mode === 'ai-indicator' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, minHeight: 600 }}>
+          <AIIndicatorChat />
+          <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 12, padding: 16, overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
+              Generated indicators will appear here. Save them to use in strategies.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Builder Mode */}
+      {mode === 'build' && (
+      <>
       {loading ? <div style={{ color: '#6b7280', textAlign: 'center', padding: 40 }}>Loading…</div> : (
         <div className="ib2-wrap">
           {/* Palette */}
@@ -499,6 +550,8 @@ export default function IndicatorBuilder() {
             )}
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
