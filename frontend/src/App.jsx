@@ -5,29 +5,38 @@ import StrategyBuilder from './StrategyBuilder'
 import IndicatorBuilder from './IndicatorBuilder'
 import KeyManager from './KeyManager'
 
-function App() {
-  const [view, setView] = useState('backtest')
+const VIEWS = [
+  { id: 'backtest',  label: 'Backtest',          icon: '▶' },
+  { id: 'strategy',  label: 'Strategy Builder',  icon: '⚙' },
+  { id: 'indicator', label: 'Indicator Builder', icon: '📐' },
+  { id: 'keys',      label: 'Key Manager',       icon: '🔑' },
+]
 
+export default function App() {
+  const [view, setView] = useState('backtest')
   return (
-    <div className="container">
-      <header className="header">
-        <h1>Backtester Dashboard</h1>
-        <nav className="nav">
-          <button onClick={() => setView('backtest')}>App</button>
-          <button onClick={() => setView('strategy')}>StrategyBuilder</button>
-          <button onClick={() => setView('indicator')}>IndicatorBuilder</button>
-          <button onClick={() => setView('keys')}>KeyManager</button>
+    <div className="app-shell">
+      <header className="app-topbar">
+        <div className="app-logo">
+          <div className="app-logo-mark">📊</div>
+          <span className="app-logo-text">Backtester</span>
+        </div>
+        <nav className="app-nav">
+          {VIEWS.map(v => (
+            <button key={v.id}
+              className={`nav-btn${view === v.id ? ' active' : ''}`}
+              onClick={() => setView(v.id)}>
+              <span style={{fontSize:'0.85rem'}}>{v.icon}</span>{v.label}
+            </button>
+          ))}
         </nav>
       </header>
-
-      <main>
-        {view === 'backtest' && <Backtest goTo={(v) => setView(v)} />}
-        {view === 'strategy' && <StrategyBuilder />}
+      <main className="app-content fade-up" key={view}>
+        {view === 'backtest'  && <Backtest  goTo={setView} />}
+        {view === 'strategy'  && <StrategyBuilder />}
         {view === 'indicator' && <IndicatorBuilder />}
-        {view === 'keys' && <KeyManager />}
+        {view === 'keys'      && <KeyManager />}
       </main>
     </div>
   )
 }
-
-export default App

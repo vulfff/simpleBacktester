@@ -1,393 +1,331 @@
-import { useEffect, useMemo, useState } from 'react'
-import './App.css'
+import { useEffect, useState } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const TFS = ['1m','5m','15m','30m','1h','4h','1d','1w','1M']
 
-const DEFAULT_COLUMN_MAP = {
-  time: 'timestamp',
-  bid: 'bid',
-  ask: 'ask',
-  volume: 'volume',
-  name: 'symbol',
+const fmt  = n => typeof n === 'number' ? n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 }) : '—'
+const fmtP = (v, b) => b ? ((v - b) / Math.abs(b) * 100).toFixed(2) + '%' : '—'
+
+function StatCard({ label, value, sub, color, emoji }) {
+  return (
+    <div className="stat-card" style={{ borderColor: `${color}22` }}>
+      <div className="stat-label" style={{ display:'flex', alignItems:'center', gap:5 }}>
+        <span>{emoji}</span>{label}
+      </div>
+      <div className="stat-value" style={{ color }}>{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  )
 }
 
-const DATA_METHODS = [
-  { name: 'upload', label: 'Upload CSV File' },
-  { name: 'api', label: 'Fetch from API' },
-]
-
-const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M']
-
-function Backtest({ goTo }) {
-  const [result, setResult] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  
-  // Data method selection
-  const [dataMethod, setDataMethod] = useState('upload')
-  
-  // API fetch fields
-  const [ticker, setTicker] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [timeframe, setTimeframe] = useState('1h')
-
-  // Strategy slots loaded from backend DB (edited via Strategy Builder)
-  const [selectedStrategies, setSelectedStrategies] = useState([])
+export default function Backtest({ goTo }) {
+  const [method,     setMethod]     = useState('upload')
+  const [file,       setFile]       = useState(null)
+  const [ticker,     setTicker]     = useState('')
+  const [startDate,  setStartDate]  = useState('')
+  const [endDate,    setEndDate]    = useState('')
+  const [timeframe,  setTimeframe]  = useState('1d')
+  const [cash,       setCash]       = useState('10000')
+  const [strategies, setStrategies] = useState([])
+  const [selId,      setSelId]      = useState(null)
+  const [hasKey,     setHasKey]     = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState('')
+  const [result,     setResult]     = useState(null)
 
   useEffect(() => {
-    fetch(`${API_BASE}/db/strategies`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.strategies) {
-          const parsed = d.strategies.map((s) => ({
-            id: s.id,
-            name: s.name,
-            logic: s.logic,
-            config: (() => {
-              try { return JSON.parse(s.config) } catch { return s.config }
-            })(),
-          }))
-          setSelectedStrategies(parsed)
-          if (!selectedStrategyId && parsed.length) setSelectedStrategyId(parsed[0].id)
-        }
-      })
-      .catch(() => {})
+    fetch(`${API}/db/strategies`).then(r=>r.json()).then(d => {
+      const arr = (d.strategies||[]).map(s => ({
+        ...s, config: (() => { try { return JSON.parse(s.config) } catch { return s.config } })()
+      }))
+      setStrategies(arr)
+      if (arr.length) setSelId(arr[0].id)
+    }).catch(()=>{})
+
+    fetch(`${API}/db/api_keys`).then(r=>r.json())
+      .then(d => setHasKey(!!(d.api_key?.data_key)))
+      .catch(()=> setHasKey(false))
   }, [])
 
-  const [columnMap, setColumnMap] = useState(
-    JSON.stringify(DEFAULT_COLUMN_MAP, null, 2),
-  )
-  const [symbol, setSymbol] = useState('')
-  const [timeFormat, setTimeFormat] = useState('')
-  const [startingCash, setStartingCash] = useState('0')
-  const [file, setFile] = useState(null)
-  const [selectedStrategyId, setSelectedStrategyId] = useState(() => {
-    try {
-      const raw = localStorage.getItem('selectedStrategies')
-      const arr = raw ? JSON.parse(raw) : []
-      if (arr.length && arr[0]?.id) return arr[0].id
-    } catch {}
-    return null
-  })
+  const selected = strategies.find(s => s.id === selId)
 
-  const fetchDataFromAPI = async () => {
-    if (!ticker) {
-      setError('Please enter a ticker symbol.')
-      return null
-    }
-    if (!startDate || !endDate) {
-      setError('Please select start and end dates.')
-      return null
-    }
-
-    try {
-      const response = await fetch(`${API_BASE}/data/fetch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ticker,
-          start_date: startDate,
-          end_date: endDate,
-          timeframe,
-        }),
-      })
-
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail.detail || 'Failed to fetch data from API.')
-      }
-
-      const data = await response.json()
-      return data
-    } catch (err) {
-      setError(err.message)
-      return null
-    }
-  }
-
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    setError('')
-    setResult(null)
-
-    // Validate based on data method
-    if (dataMethod === 'upload' && !file) {
-      setError('Please select a CSV file.')
-      return
-    }
-
-    // Use selected strategies from DB-loaded state (managed in Strategy Builder)
-    let strategiesToSend = []
-    try {
-      const arr = selectedStrategies || []
-      if (!arr || arr.length === 0) {
-        setError('No strategy slots found. Open Strategy Builder to create one.')
-        return
-      }
-      const chosen = arr.find(s => s.id === selectedStrategyId) || arr[0]
-      if (!chosen) {
-        setError('No strategy selected. Open Strategy Builder to create one.')
-        return
-      }
-      if (!chosen.name) {
-        setError('Selected strategy has no type/name. Edit it in Strategy Builder.')
-        return
-      }
-      try { JSON.parse(typeof chosen.config === 'string' ? chosen.config : JSON.stringify(chosen.config) || '{}') } catch (err) {
-        setError(`Strategy config must be valid JSON for strategy ${chosen.id}.`)
-        return
-      }
-      strategiesToSend = [chosen]
-    } catch (e) { setError('Failed to load selected strategy'); return }
-
-    let columnMapValue
-    try {
-      columnMapValue = JSON.parse(columnMap)
-    } catch (err) {
-      setError('Column map must be valid JSON.')
-      return
-    }
-
+  const run = async e => {
+    e.preventDefault()
+    setError(''); setResult(null)
+    if (method==='upload' && !file)            return setError('Please select a CSV file.')
+    if (method==='api' && !ticker)             return setError('Please enter a ticker symbol.')
+    if (method==='api' && (!startDate||!endDate)) return setError('Please set start and end dates.')
+    if (!selected)                             return setError('No strategy selected. Build one first.')
     setLoading(true)
+
     try {
-      let backtestData
+      const form = new FormData()
 
-      if (dataMethod === 'api') {
-        // Fetch data from API first
-        backtestData = await fetchDataFromAPI()
-        if (!backtestData) {
-          setLoading(false)
-          return
-        }
-      }
-
-      const formData = new FormData()
-      
-      if (dataMethod === 'upload') {
-        formData.append('file', file)
+      if (method === 'upload') {
+        form.append('file', file)
       } else {
-        formData.append('data', JSON.stringify(backtestData))
+        // Fetch data from provider first
+        const dr = await fetch(`${API}/data/fetch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker, start_date: startDate, end_date: endDate, timeframe }),
+        })
+        if (!dr.ok) {
+          const d = await dr.json().catch(()=>({}))
+          throw new Error(d.detail || 'Failed to fetch market data.')
+        }
+        const fetched = await dr.json()
+        form.append('data', JSON.stringify(fetched.rows || []))
       }
-      
-      formData.append('column_map', JSON.stringify(columnMapValue))
-      formData.append('strategies', JSON.stringify(strategiesToSend))
-      if (symbol) formData.append('symbol', symbol)
-      if (timeFormat) formData.append('time_format', timeFormat)
-      formData.append('starting_cash', startingCash)
 
-      const response = await fetch(`${API_BASE}/backtest/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-      
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}))
-        throw new Error(detail.detail || 'Backtest failed.')
+      form.append('column_map', JSON.stringify({
+        time:'timestamp', bid:'bid', ask:'ask', volume:'volume', name:'symbol'
+      }))
+      form.append('strategies', JSON.stringify([selected]))
+      form.append('starting_cash', cash || '10000')
+      if (timeframe) form.append('timeframe', timeframe)
+
+      const res = await fetch(`${API}/backtest/upload`, { method:'POST', body:form })
+      if (!res.ok) {
+        const d = await res.json().catch(()=>({}))
+        throw new Error(d.detail || `Server error ${res.status}`)
       }
-      
-      const data = await response.json()
-      setResult(data)
-    } catch (err) {
+      setResult(await res.json())
+    } catch(err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
+  const startCash = parseFloat(cash) || 10000
+  const pnl    = result ? result.total_value - startCash : 0
+  const pnlPct = result ? fmtP(result.total_value, startCash) : '—'
+  const positive = pnl >= 0
+
   return (
     <div className="view">
-      <header className="header">
-        <h2>Backtester - Run Backtest</h2>
-        <p>Use the Strategy Builder to manage strategies.</p>
-      </header>
+      <h2>Backtest</h2>
+      <p>Run your strategy against historical data and see how it performs.</p>
 
-      <form className="card" onSubmit={handleSubmit}>
-        <div className="grid">
-          <label className="field">
-            <span>Strategy</span>
-            <select
-              value={selectedStrategyId ?? ''}
-              onChange={(e) => setSelectedStrategyId(Number(e.target.value) || null)}
-              onFocus={async () => {
-                // ensure latest slots from DB; if no valid named strategies, redirect to builder
-                try {
-                  const res = await fetch(`${API_BASE}/db/strategies`)
-                  const data = await res.json()
-                  const arr = data.strategies || []
-                  const hasNamed = arr.some(s => s && s.name)
-                  if (!hasNamed && typeof goTo === 'function') goTo('strategy')
-                  else setSelectedStrategies(arr.map(s => ({ id: s.id, name: s.name, logic: s.logic, config: (() => { try { return JSON.parse(s.config) } catch { return s.config } })() })))
-                } catch {
-                  if (typeof goTo === 'function') goTo('strategy')
-                }
-              }}
-            >
-              <option value="">Choose strategy (click to manage)</option>
-              {selectedStrategies.map((s) => (
-                <option key={s.id} value={s.id}>{s.name || `(slot ${s.id})`}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="grid">
-          <label className="field">
-            <span>Data Source</span>
-            <select
-              value={dataMethod}
-              onChange={(e) => setDataMethod(e.target.value)}
-            >
-              {DATA_METHODS.map((method) => (
-                <option key={method.name} value={method.name}>
-                  {method.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="data-method-container">
-          <div className="grid">
-            {dataMethod === 'upload' ? (
-              <>
-                <label className="field">
-                  <span>CSV File</span>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Symbol override (optional)</span>
-                  <input
-                    type="text"
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value)}
-                    placeholder="BTCUSD"
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Time format (optional)</span>
-                  <input
-                    type="text"
-                    value={timeFormat}
-                    onChange={(e) => setTimeFormat(e.target.value)}
-                    placeholder="%Y-%m-%d %H:%M:%S"
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Timeframe (optional)</span>
-                  <select
-                    value={timeframe}
-                    onChange={(e) => setTimeframe(e.target.value)}
-                  >
-                    <option value="">Select timeframe</option>
-                    {TIMEFRAMES.map((tf) => (
-                      <option key={tf} value={tf}>
-                        {tf}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : (
-              <>
-                <label className="field">
-                  <span>Ticker Symbol</span>
-                  <input
-                    type="text"
-                    value={ticker}
-                    onChange={(e) => setTicker(e.target.value)}
-                    placeholder="BTCUSD"
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Start Date</span>
-                  <input
-                    type="datetime-local"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>End Date</span>
-                  <input
-                    type="datetime-local"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Timeframe</span>
-                  <select
-                    value={timeframe}
-                    onChange={(e) => setTimeframe(e.target.value)}
-                  >
-                    {TIMEFRAMES.map((tf) => (
-                      <option key={tf} value={tf}>
-                        {tf}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
+      {/* API key warning */}
+      {hasKey === false && method === 'api' && (
+        <div className="alert alert-warn fade-up" style={{ marginBottom:14, cursor:'pointer' }}
+          onClick={() => goTo?.('keys')}>
+          <span>⚠️</span>
+          <div>
+            <strong>No data API key configured.</strong> You need a data provider key to
+            fetch live market data. <span style={{textDecoration:'underline'}}>Click to set one up →</span>
           </div>
         </div>
+      )}
 
-        <div className="grid">
-          <label className="field">
-            <span>Starting cash</span>
-            <input
-              type="number"
-              value={startingCash}
-              onChange={(e) => setStartingCash(e.target.value)}
-              min="0"
-              step="0.01"
-            />
-          </label>
-        </div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <form onSubmit={run}>
 
-        <div className="two-column">
-          {dataMethod === 'upload' && (
-            <label className="field">
-              <span>Column map (JSON)</span>
-              <textarea
-                value={columnMap}
-                onChange={(e) => setColumnMap(e.target.value)}
-                rows={10}
-              />
-            </label>
-          )}
-        </div>
+          {/* ── Strategy selector ── */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <span className="field-label">Strategy</span>
+              <button type="button" className="btn btn-ghost btn-sm"
+                onClick={() => goTo?.('strategy')}>Manage strategies →</button>
+            </div>
+            {strategies.length === 0 ? (
+              <div style={{ background:'rgba(124,134,247,0.07)', border:'1px dashed rgba(124,134,247,0.35)',
+                borderRadius:'var(--r)', padding:'20px', textAlign:'center' }}>
+                <div style={{ fontSize:'1.6rem', marginBottom:6 }}>🧩</div>
+                <p style={{ color:'var(--text-mute)', margin:'0 0 10px', fontSize:'0.86rem' }}>No strategies yet.</p>
+                <button type="button" className="btn btn-primary btn-sm btn-pill"
+                  onClick={() => goTo?.('strategy')}>Open Strategy Builder</button>
+              </div>
+            ) : (
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {strategies.map(s => (
+                  <button type="button" key={s.id}
+                    onClick={() => setSelId(s.id)}
+                    style={{
+                      padding:'6px 14px', borderRadius:'var(--r)', fontSize:'0.84rem',
+                      fontWeight: s.id===selId ? 700 : 500, cursor:'pointer', transition:'all 0.15s',
+                      background: s.id===selId ? 'rgba(124,134,247,0.12)' : 'var(--surface)',
+                      border: s.id===selId ? '1px solid rgba(124,134,247,0.45)' : '1px solid var(--border)',
+                      color: s.id===selId ? 'var(--accent2)' : 'var(--text-soft)',
+                    }}>
+                    {s.name || `Strategy ${s.id}`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        <button className="primary" type="submit" disabled={loading}>
-          {loading ? 'Running...' : 'Run backtest'}
-        </button>
-      </form>
+          <div className="divider" style={{ marginBottom:16 }} />
 
-      {error && <div className="alert error">{error}</div>}
+          {/* ── Data source ── */}
+          <div style={{ marginBottom:16 }}>
+            <div className="field-label" style={{ marginBottom:8 }}>Data Source</div>
+            <div className="tab-strip" style={{ marginBottom:14, maxWidth:320 }}>
+              <button type="button" className={`tab-btn${method==='upload'?' active':''}`}
+                onClick={() => setMethod('upload')}>📂 Upload CSV</button>
+              <button type="button" className={`tab-btn${method==='api'?' active':''}`}
+                onClick={() => setMethod('api')}>🌐 Fetch from API</button>
+            </div>
 
+            {method === 'upload' ? (
+              <div className="grid-2">
+                <div className="field">
+                  <label className="field-label">CSV File</label>
+                  <label className={`upload-zone${file?' has-file':''}`}>
+                    <span style={{ fontSize:'1.1rem' }}>{file ? '✅' : '📁'}</span>
+                    <span style={{ fontSize:'0.84rem', color: file?'var(--green)':'var(--text-mute)' }}>
+                      {file ? file.name : 'Click to select a CSV file'}
+                    </span>
+                    <input type="file" accept=".csv" style={{ display:'none' }}
+                      onChange={e => setFile(e.target.files?.[0]||null)} />
+                  </label>
+                </div>
+                <div className="field">
+                  <label className="field-label">Timeframe</label>
+                  <select value={timeframe} onChange={e=>setTimeframe(e.target.value)}>
+                    <option value="">Auto-detect</option>
+                    {TFS.map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="grid-auto">
+                <div className="field">
+                  <label className="field-label">Ticker</label>
+                  <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())}
+                    placeholder="e.g. BTCUSD, AAPL" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Start Date</label>
+                  <input type="datetime-local" value={startDate} onChange={e=>setStartDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">End Date</label>
+                  <input type="datetime-local" value={endDate} onChange={e=>setEndDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Timeframe</label>
+                  <select value={timeframe} onChange={e=>setTimeframe(e.target.value)}>
+                    {TFS.map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Capital ── */}
+          <div style={{ marginBottom:20, maxWidth:220 }}>
+            <div className="field">
+              <label className="field-label">Starting Capital ($)</label>
+              <input type="number" value={cash} min="0" step="100"
+                onChange={e=>setCash(e.target.value)} placeholder="10000" />
+            </div>
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-pill btn-lg"
+            disabled={loading || strategies.length===0}>
+            {loading ? <><span className="spinner" /> Running…</> : '▶  Run Backtest'}
+          </button>
+        </form>
+
+        {error && (
+          <div className="alert alert-error fade-up" style={{ marginTop:14 }}>
+            <span>⚠️</span><span>{error}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Results ── */}
       {result && (
-        <div className="card result">
-          <h2>Result</h2>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
+        <div className="card fade-up">
+          {/* header row */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+            flexWrap:'wrap', gap:10, marginBottom:18 }}>
+            <div>
+              <div style={{ fontWeight:800, fontSize:'1.05rem', color:'var(--text)' }}>
+                Backtest Results
+              </div>
+              <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', marginTop:2 }}>
+                {selected?.name} · {method==='api' ? ticker : file?.name}
+                {result.trades > 0 && <> · {result.trades} trade{result.trades!==1?'s':''}</>}
+              </div>
+            </div>
+            <div style={{
+              display:'flex', alignItems:'center', gap:7, padding:'5px 14px',
+              borderRadius:999,
+              background: positive?'rgba(47,216,154,0.09)':'rgba(244,114,106,0.09)',
+              border: `1px solid ${positive?'rgba(47,216,154,0.3)':'rgba(244,114,106,0.3)'}`,
+            }}>
+              <span>{positive?'📈':'📉'}</span>
+              <span style={{ fontWeight:800, color: positive?'var(--green)':'var(--red)' }}>
+                {positive?'+':''}{fmt(pnl)} ({pnlPct})
+              </span>
+            </div>
+          </div>
+
+          {/* stat cards */}
+          <div className="grid-4" style={{ marginBottom:16 }}>
+            <StatCard emoji="💰" label="Final Value"    value={`$${fmt(result.total_value)}`}
+              sub={`Started $${fmt(startCash)}`} color={positive?'var(--green)':'var(--red)'} />
+            <StatCard emoji="🏦" label="Cash"           value={`$${fmt(result.cash)}`}
+              sub="Uninvested"    color="var(--accent)" />
+            <StatCard emoji="📊" label="Positions"      value={`$${fmt(result.asset_value)}`}
+              sub="Market value"  color="var(--accent2)" />
+            <StatCard emoji={positive?'📈':'📉'} label="P & L"
+              value={`${positive?'+':''}$${fmt(pnl)}`}
+              sub={pnlPct} color={positive?'var(--green)':'var(--red)'} />
+          </div>
+
+          {/* warnings */}
+          {(result.warnings||[]).map((w,i) => (
+            <div key={i} className="alert alert-warn" style={{ marginBottom:8, fontSize:'0.82rem' }}>
+              ⚠️ {w}
+            </div>
+          ))}
+
+          {/* positions */}
+          {Object.keys(result.positions||{}).length > 0 && (
+            <div style={{ marginBottom:14 }}>
+              <div className="field-label" style={{ marginBottom:8 }}>Open Positions</div>
+              {Object.entries(result.positions).map(([sym, qty]) => {
+                const px = result.last_prices?.[sym] ?? 0
+                const val = qty * px
+                return (
+                  <div key={sym} style={{
+                    display:'flex', alignItems:'center', gap:10,
+                    background:'var(--surface)', border:'1px solid var(--border)',
+                    borderRadius:'var(--r)', padding:'9px 14px', marginBottom:5
+                  }}>
+                    <div style={{ width:30, height:30, borderRadius:'50%', fontSize:'0.72rem', fontWeight:800,
+                      background:'rgba(58,183,245,0.1)', border:'1px solid rgba(58,183,245,0.25)',
+                      display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', flexShrink:0 }}>
+                      {sym.slice(0,2).toUpperCase()}
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:700, fontSize:'0.88rem' }}>{sym}</div>
+                      <div style={{ fontSize:'0.73rem', color:'var(--text-mute)' }}>
+                        {qty > 0 ? 'Long' : 'Short'} {Math.abs(qty)} @ ${fmt(px)}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight:700, color: val>=0?'var(--green)':'var(--red)' }}>
+                      ${fmt(Math.abs(val))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <details>
+            <summary style={{ fontSize:'0.75rem', color:'var(--text-mute)', cursor:'pointer', userSelect:'none' }}>
+              Raw JSON
+            </summary>
+            <pre style={{ marginTop:8 }}>{JSON.stringify(result, null, 2)}</pre>
+          </details>
         </div>
       )}
     </div>
   )
 }
-
-export default Backtest

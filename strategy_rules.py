@@ -1,20 +1,17 @@
 """
-Rule-based strategy framework.
+strategy_rules.py  –  Rule-based strategy framework
 
-Architecture
-============
-
-Operand  – anything that produces a numeric value at a point in time
-           (price fields, indicators, constants, historical lookbacks)
-Condition – compares two Operands using an operator (>, <, cross, etc.)
-Rule      – a named Condition assigned a role (entry_long, exit_long, …)
-RuleSet   – ordered list of Rules for a single strategy slot
-Strategy  – evaluates a RuleSet against incoming ticks, emitting signals
-
-Serialisation
-=============
-Every object can round-trip through a plain dict so it can be stored in
-the DB as JSON and reconstructed without eval().
+Changes vs original
+====================
+1. Rule.evaluate() now respects per-condition `combiner` fields (AND/OR between
+   each adjacent pair), matching what the frontend serialises.
+2. PriceSeries.macd() now computes the signal line and histogram properly using
+   an incremental EMA buffer instead of returning math.nan.
+3. Condition.from_dict() gracefully skips / wraps exit_condition dicts
+   (take_profit_pct, stop_loss_pct, bars_held, time_of_day, day_of_week …)
+   that are stored in the conditions list by the frontend.
+4. ExitCondition is a new Condition subclass that is evaluated by the engine
+   via portfolio state rather than price operands.
 """
 
 from __future__ import annotations
@@ -35,10 +32,10 @@ from tickdata import TickData
 # ---------------------------------------------------------------------------
 
 class RuleRole(str, Enum):
-    ENTRY_LONG   = "entry_long"    # open / add to long position
-    EXIT_LONG    = "exit_long"     # close / reduce long position
-    ENTRY_SHORT  = "entry_short"   # open / add to short position
-    EXIT_SHORT   = "exit_short"    # close / reduce short position
+    ENTRY_LONG   = "entry_long"
+    EXIT_LONG    = "exit_long"
+    ENTRY_SHORT  = "entry_short"
+    EXIT_SHORT   = "exit_short"
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +43,8 @@ class RuleRole(str, Enum):
 # ---------------------------------------------------------------------------
 
 class TimingMode(str, Enum):
-    EVERY_TICK = "every_tick"   # fire whenever condition is true
-    ON_CHANGE  = "on_change"   # fire only on the tick the condition turns true
+    EVERY_TICK = "every_tick"
+    ON_CHANGE  = "on_change"
 
 
 # ---------------------------------------------------------------------------
@@ -55,15 +52,10 @@ class TimingMode(str, Enum):
 # ---------------------------------------------------------------------------
 
 class Operand(ABC):
-    """Returns a float (or NaN) given the current price series."""
-
     @abstractmethod
-    def value(self, series: "PriceSeries") -> float:
-        ...
-
+    def value(self, series: "PriceSeries") -> float: ...
     @abstractmethod
-    def to_dict(self) -> Dict[str, Any]:
-        ...
+    def to_dict(self) -> Dict[str, Any]: ...
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Operand":
@@ -75,8 +67,7 @@ class Operand(ABC):
 
     @classmethod
     @abstractmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "Operand":
-        ...
+    def _from_dict(cls, d: Dict[str, Any]) -> "Operand": ...
 
 
 _OPERAND_REGISTRY: Dict[str, type] = {}
@@ -87,12 +78,11 @@ def _reg(cls):
     return cls
 
 
-# --- Constant ---------------------------------------------------------------
+# ── Constant ─────────────────────────────────────────────────────────────────
 
 @_reg
 @dataclass
 class ConstantOperand(Operand):
-    """A literal number."""
     _type_tag = "constant"
     value_: float
 
@@ -107,7 +97,7 @@ class ConstantOperand(Operand):
         return cls(value_=float(d["value"]))
 
 
-# --- Price field ------------------------------------------------------------
+# ── Price field ───────────────────────────────────────────────────────────────
 
 class PriceField(str, Enum):
     BID    = "bid"
@@ -119,7 +109,6 @@ class PriceField(str, Enum):
 @_reg
 @dataclass
 class PriceOperand(Operand):
-    """Current bid / ask / mid / volume."""
     _type_tag = "price"
     field: PriceField = PriceField.MID
 
@@ -134,12 +123,11 @@ class PriceOperand(Operand):
         return cls(field=PriceField(d["field"]))
 
 
-# --- Historical lookback ----------------------------------------------------
+# ── Lookback ──────────────────────────────────────────────────────────────────
 
 @_reg
 @dataclass
 class LookbackOperand(Operand):
-    """Price field N bars ago."""
     _type_tag = "lookback"
     field: PriceField = PriceField.MID
     period: int = 1
@@ -155,12 +143,11 @@ class LookbackOperand(Operand):
         return cls(field=PriceField(d["field"]), period=int(d["period"]))
 
 
-# --- Simple Moving Average --------------------------------------------------
+# ── SMA ───────────────────────────────────────────────────────────────────────
 
 @_reg
 @dataclass
 class SMAOperand(Operand):
-    """Simple moving average of a price field."""
     _type_tag = "sma"
     field: PriceField = PriceField.MID
     period: int = 20
@@ -179,12 +166,11 @@ class SMAOperand(Operand):
         return cls(field=PriceField(d["field"]), period=int(d["period"]))
 
 
-# --- Exponential Moving Average ---------------------------------------------
+# ── EMA ───────────────────────────────────────────────────────────────────────
 
 @_reg
 @dataclass
 class EMAOperand(Operand):
-    """EMA stored in the PriceSeries cache."""
     _type_tag = "ema"
     field: PriceField = PriceField.MID
     period: int = 20
@@ -200,12 +186,11 @@ class EMAOperand(Operand):
         return cls(field=PriceField(d["field"]), period=int(d["period"]))
 
 
-# --- RSI --------------------------------------------------------------------
+# ── RSI ───────────────────────────────────────────────────────────────────────
 
 @_reg
 @dataclass
 class RSIOperand(Operand):
-    """RSI(period) of a price field."""
     _type_tag = "rsi"
     field: PriceField = PriceField.MID
     period: int = 14
@@ -221,7 +206,7 @@ class RSIOperand(Operand):
         return cls(field=PriceField(d["field"]), period=int(d["period"]))
 
 
-# --- Bollinger Band component -----------------------------------------------
+# ── Bollinger ─────────────────────────────────────────────────────────────────
 
 class BollingerComponent(str, Enum):
     UPPER  = "upper"
@@ -234,7 +219,6 @@ class BollingerComponent(str, Enum):
 @_reg
 @dataclass
 class BollingerOperand(Operand):
-    """One component of a Bollinger Band."""
     _type_tag = "bollinger"
     field: PriceField = PriceField.MID
     period: int = 20
@@ -245,13 +229,8 @@ class BollingerOperand(Operand):
         return series.bollinger(self.field, self.period, self.std_dev, self.component)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "type": "bollinger",
-            "field": self.field.value,
-            "period": self.period,
-            "std_dev": self.std_dev,
-            "component": self.component.value,
-        }
+        return {"type": "bollinger", "field": self.field.value, "period": self.period,
+                "std_dev": self.std_dev, "component": self.component.value}
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "BollingerOperand":
@@ -263,12 +242,12 @@ class BollingerOperand(Operand):
         )
 
 
-# --- MACD component ---------------------------------------------------------
+# ── MACD ──────────────────────────────────────────────────────────────────────
 
 class MACDComponent(str, Enum):
-    MACD    = "macd"
-    SIGNAL  = "signal"
-    HIST    = "hist"
+    MACD   = "macd"
+    SIGNAL = "signal"
+    HIST   = "hist"
 
 
 @_reg
@@ -284,13 +263,8 @@ class MACDOperand(Operand):
         return series.macd(self.fast, self.slow, self.signal, self.component)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "type": "macd",
-            "fast": self.fast,
-            "slow": self.slow,
-            "signal": self.signal,
-            "component": self.component.value,
-        }
+        return {"type": "macd", "fast": self.fast, "slow": self.slow,
+                "signal": self.signal, "component": self.component.value}
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "MACDOperand":
@@ -313,21 +287,18 @@ class Operator(str, Enum):
     LTE         = "<="
     EQ          = "=="
     NEQ         = "!="
-    CROSS_ABOVE = "cross_above"   # left crossed above right on this tick
-    CROSS_BELOW = "cross_below"   # left crossed below right on this tick
+    CROSS_ABOVE = "cross_above"
+    CROSS_BELOW = "cross_below"
 
 
 @dataclass
 class Condition:
-    """
-    Evaluates  left_operand  operator  right_operand.
-
-    Cross operators require the PriceSeries to expose a one-tick lag so they
-    can check whether the relationship *changed* this tick.
-    """
+    """Evaluates left_operand operator right_operand."""
     left:     Operand
     operator: Operator
     right:    Operand
+    # combiner tells Rule how to join this condition with the NEXT one
+    combiner: str = "and"   # "and" | "or"
 
     def evaluate(self, series: "PriceSeries") -> bool:
         lv = self.left.value(series)
@@ -336,14 +307,13 @@ class Condition:
         if math.isnan(lv) or math.isnan(rv):
             return False
 
-        if self.operator == Operator.GT:          return lv >  rv
-        if self.operator == Operator.GTE:         return lv >= rv
-        if self.operator == Operator.LT:          return lv <  rv
-        if self.operator == Operator.LTE:         return lv <= rv
-        if self.operator == Operator.EQ:          return math.isclose(lv, rv)
-        if self.operator == Operator.NEQ:         return not math.isclose(lv, rv)
+        if self.operator == Operator.GT:  return lv >  rv
+        if self.operator == Operator.GTE: return lv >= rv
+        if self.operator == Operator.LT:  return lv <  rv
+        if self.operator == Operator.LTE: return lv <= rv
+        if self.operator == Operator.EQ:  return math.isclose(lv, rv)
+        if self.operator == Operator.NEQ: return not math.isclose(lv, rv)
 
-        # Cross operators need previous values
         lv_prev = self.left.value(series.prev_snapshot)
         rv_prev = self.right.value(series.prev_snapshot)
         if math.isnan(lv_prev) or math.isnan(rv_prev):
@@ -357,23 +327,76 @@ class Condition:
         return False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "left":     self.left.to_dict(),
-            "operator": self.operator.value,
-            "right":    self.right.to_dict(),
-        }
+        return {"left": self.left.to_dict(), "operator": self.operator.value,
+                "right": self.right.to_dict(), "combiner": self.combiner}
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "Condition":
+    def from_dict(d: Dict[str, Any]) -> Optional["Condition"]:
+        """Return None for exit_condition dicts (handled separately)."""
+        if d.get("kind") == "exit_condition":
+            return None  # skipped – ExitCondition handled by engine
         return Condition(
             left=Operand.from_dict(d["left"]),
             operator=Operator(d["operator"]),
             right=Operand.from_dict(d["right"]),
+            combiner=d.get("combiner", "and"),
         )
 
 
+# ── ExitCondition ─────────────────────────────────────────────────────────────
+
+@dataclass
+class ExitCondition:
+    """
+    Portfolio-state based exit condition (P&L / time).
+    Evaluated by the engine with access to portfolio, not just price series.
+    """
+    exit_type: str   # take_profit_pct | stop_loss_pct | take_profit_abs |
+                     # stop_loss_abs | bars_held | time_of_day | day_of_week
+    value: float
+    combiner: str = "and"
+
+    def evaluate_portfolio(self, portfolio: Any, tick: Any, bars_in_trade: int) -> bool:
+        t = self.exit_type
+        if t == "take_profit_pct":
+            pnl_pct = _portfolio_pnl_pct(portfolio)
+            return pnl_pct is not None and pnl_pct >= self.value
+        if t == "stop_loss_pct":
+            pnl_pct = _portfolio_pnl_pct(portfolio)
+            return pnl_pct is not None and pnl_pct <= -self.value
+        if t == "take_profit_abs":
+            pnl = portfolio.total_value() - portfolio.starting_cash
+            return pnl >= self.value
+        if t == "stop_loss_abs":
+            pnl = portfolio.total_value() - portfolio.starting_cash
+            return pnl <= -self.value
+        if t == "bars_held":
+            return bars_in_trade >= int(self.value)
+        if t == "time_of_day":
+            return tick.time.hour == int(self.value)
+        if t == "day_of_week":
+            return tick.time.weekday() == int(self.value) % 7
+        return False
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "ExitCondition":
+        return ExitCondition(
+            exit_type=d["exitType"],
+            value=float(d.get("value", 0)),
+            combiner=d.get("combiner", "and"),
+        )
+
+
+def _portfolio_pnl_pct(portfolio: Any) -> Optional[float]:
+    start = portfolio.starting_cash
+    if start == 0:
+        return None
+    current = portfolio.total_value()
+    return (current - start) / abs(start) * 100
+
+
 # ---------------------------------------------------------------------------
-# 5. Rule
+# 5. Rule  – per-condition AND/OR combiner
 # ---------------------------------------------------------------------------
 
 class RuleCombiner(str, Enum):
@@ -384,50 +407,106 @@ class RuleCombiner(str, Enum):
 @dataclass
 class Rule:
     """
-    A named condition (or list of conditions) attached to a role.
+    A named set of conditions attached to a role.
 
-    When multiple conditions are listed they are combined with AND or OR.
+    Condition list evaluation
+    ─────────────────────────
+    Each condition (after the first) carries a `combiner` field ("and"/"or")
+    that defines how it joins with the accumulated result so far:
+
+        result = cond[0]
+        for cond[i] (i > 0):
+            if cond[i].combiner == "and":  result = result AND cond[i]
+            else:                           result = result OR  cond[i]
+
+    This matches exactly what the frontend serialises.
     """
-    name:       str
-    role:       RuleRole
-    conditions: List[Condition]
-    combiner:   RuleCombiner = RuleCombiner.AND
-    timing:     TimingMode   = TimingMode.ON_CHANGE
-    quantity:   float        = 1.0
+    name:            str
+    role:            RuleRole
+    conditions:      List[Condition]        # signal conditions
+    exit_conditions: List[ExitCondition] = field(default_factory=list)
+    combiner:        RuleCombiner = RuleCombiner.AND   # fallback / legacy
+    timing:          TimingMode   = TimingMode.ON_CHANGE
+    quantity:        float        = 1.0
 
-    # runtime state – not serialised
-    _prev_result: bool = field(default=False, init=False, repr=False, compare=False)
+    _prev_result:    bool = field(default=False, init=False, repr=False, compare=False)
+    _bars_in_trade:  int  = field(default=0,     init=False, repr=False, compare=False)
 
-    def evaluate(self, series: "PriceSeries") -> bool:
-        if self.combiner == RuleCombiner.AND:
-            result = all(c.evaluate(series) for c in self.conditions)
+    def evaluate(self, series: "PriceSeries", portfolio: Any = None, tick: Any = None) -> bool:
+        # ── signal conditions ──────────────────────────────────────────────
+        if self.conditions:
+            result = self.conditions[0].evaluate(series)
+            for cond in self.conditions[1:]:
+                val = cond.evaluate(series)
+                if cond.combiner == "or":
+                    result = result or val
+                else:
+                    result = result and val
         else:
-            result = any(c.evaluate(series) for c in self.conditions)
+            result = True  # no signal conditions = always pass (rely on exit conds)
 
+        # ── exit conditions (portfolio-based) ──────────────────────────────
+        if self.exit_conditions and portfolio is not None and tick is not None:
+            exit_result = self.exit_conditions[0].evaluate_portfolio(portfolio, tick, self._bars_in_trade)
+            for ec in self.exit_conditions[1:]:
+                val = ec.evaluate_portfolio(portfolio, tick, self._bars_in_trade)
+                if ec.combiner == "or":
+                    exit_result = exit_result or val
+                else:
+                    exit_result = exit_result and val
+            result = result and exit_result
+
+        # ── timing filter ──────────────────────────────────────────────────
         if self.timing == TimingMode.EVERY_TICK:
             fire = result
-        else:  # ON_CHANGE
+        else:
             fire = result and not self._prev_result
 
         self._prev_result = result
+        if fire:
+            self._bars_in_trade = 0
+        else:
+            self._bars_in_trade += 1
         return fire
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "name":       self.name,
-            "role":       self.role.value,
-            "conditions": [c.to_dict() for c in self.conditions],
-            "combiner":   self.combiner.value,
-            "timing":     self.timing.value,
-            "quantity":   self.quantity,
+            "name":            self.name,
+            "role":            self.role.value,
+            "conditions":      [c.to_dict() for c in self.conditions],
+            "exit_conditions": [{"kind": "exit_condition", "exitType": ec.exit_type,
+                                  "value": ec.value, "combiner": ec.combiner}
+                                 for ec in self.exit_conditions],
+            "combiner":        self.combiner.value,
+            "timing":          self.timing.value,
+            "quantity":        self.quantity,
         }
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Rule":
+        raw_conds = d.get("conditions", [])
+        signal_conds:  List[Condition]     = []
+        exit_conds:    List[ExitCondition] = []
+
+        for c in raw_conds:
+            if c.get("kind") == "exit_condition":
+                try:
+                    exit_conds.append(ExitCondition.from_dict(c))
+                except Exception:
+                    pass
+            else:
+                try:
+                    cond = Condition.from_dict(c)
+                    if cond is not None:
+                        signal_conds.append(cond)
+                except Exception:
+                    pass
+
         return Rule(
-            name=d["name"],
+            name=d.get("name", "Rule"),
             role=RuleRole(d["role"]),
-            conditions=[Condition.from_dict(c) for c in d["conditions"]],
+            conditions=signal_conds,
+            exit_conditions=exit_conds,
             combiner=RuleCombiner(d.get("combiner", "and")),
             timing=TimingMode(d.get("timing", "on_change")),
             quantity=float(d.get("quantity", 1.0)),
@@ -435,7 +514,7 @@ class Rule:
 
 
 # ---------------------------------------------------------------------------
-# 6. RuleSet  (a full strategy slot)
+# 6. RuleSet
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -449,31 +528,36 @@ class RuleSet:
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "RuleSet":
         return RuleSet(
-            name=d["name"],
+            name=d.get("name", "RuleSet"),
             rules=[Rule.from_dict(r) for r in d.get("rules", [])],
         )
 
 
 # ---------------------------------------------------------------------------
-# 7. PriceSeries  (rolling price + indicator cache)
+# 7. PriceSeries  – with working MACD signal & histogram
 # ---------------------------------------------------------------------------
 
 class PriceSeries:
     """
-    Maintains rolling buffers for every field and computes indicators
-    lazily, caching them per-tick so each operand only computes once.
+    Rolling price buffers + on-demand indicator computation.
+
+    MACD fix
+    ────────
+    The original implementation returned math.nan for signal and hist because
+    it tried to compute a secondary EMA without a history of MACD line values.
+    We now maintain a dedicated deque of MACD line values per (fast,slow,signal)
+    key so that the signal EMA is computed correctly after enough bars.
     """
 
-    _MAX_BUF = 500
+    _MAX_BUF = 1000
 
     def __init__(self) -> None:
-        self._bufs: Dict[str, Deque[float]] = {}
-        self._ema_state: Dict[Tuple, float] = {}
-        self._cache: Dict[Any, float] = {}
+        self._bufs:       Dict[str, Deque[float]] = {}
+        self._cache:      Dict[Any, float]         = {}
+        self._macd_hist:  Dict[Tuple, Deque[float]]= {}  # history of MACD line values
         self.prev_snapshot: "PriceSeries" = _NullSeries()
 
     def push(self, tick: TickData) -> None:
-        # capture a lightweight prev snapshot for crossover detection
         self.prev_snapshot = _SnapShot(self)
 
         mid = (tick.bid + tick.ask) / 2 if tick.ask else tick.bid
@@ -486,10 +570,8 @@ class PriceSeries:
             buf = self._bufs.setdefault(fname, deque(maxlen=self._MAX_BUF))
             buf.append(val)
 
-        # invalidate per-tick cache
+        # Invalidate per-tick cache
         self._cache.clear()
-
-    # -- value accessors -----------------------------------------------------
 
     def current(self, field: PriceField) -> float:
         buf = self._bufs.get(field.value)
@@ -507,16 +589,16 @@ class PriceSeries:
         buf = self._bufs.get(field.value, deque())
         return list(buf)[-size:]
 
-    # -- indicators ----------------------------------------------------------
-
     def ema(self, field: PriceField, period: int) -> float:
         key = ("ema", field.value, period)
         if key in self._cache:
             return self._cache[key]
-        buf = self.buffer(field, period * 3)
+        buf = self.buffer(field, self._MAX_BUF)
         if len(buf) < period:
+            self._cache[key] = math.nan
             return math.nan
-        k = 2 / (period + 1)
+        k = 2.0 / (period + 1)
+        # Seed with SMA of first `period` values
         ema_val = sum(buf[:period]) / period
         for price in buf[period:]:
             ema_val = price * k + ema_val * (1 - k)
@@ -529,17 +611,15 @@ class PriceSeries:
             return self._cache[key]
         buf = self.buffer(field, period + 1)
         if len(buf) < period + 1:
+            self._cache[key] = math.nan
             return math.nan
         gains, losses = [], []
         for i in range(1, len(buf)):
             d = buf[i] - buf[i - 1]
             (gains if d >= 0 else losses).append(abs(d))
-        ag = sum(gains) / period if gains else 0
-        al = sum(losses) / period if losses else 0
-        if al == 0:
-            v = 100.0
-        else:
-            v = 100 - 100 / (1 + ag / al)
+        ag = sum(gains) / period if gains else 0.0
+        al = sum(losses) / period if losses else 0.0
+        v = 100.0 if al == 0 else 100 - 100 / (1 + ag / al)
         self._cache[key] = v
         return v
 
@@ -555,10 +635,11 @@ class PriceSeries:
             return self._cache[key]
         buf = self.buffer(field, period)
         if len(buf) < period:
+            self._cache[key] = math.nan
             return math.nan
-        mean = sum(buf) / period
+        mean     = sum(buf) / period
         variance = sum((x - mean) ** 2 for x in buf) / period
-        sd = math.sqrt(variance) * std_dev
+        sd       = math.sqrt(variance) * std_dev
         upper, lower = mean + sd, mean - sd
         mapping = {
             BollingerComponent.UPPER:  upper,
@@ -581,57 +662,88 @@ class PriceSeries:
         key = ("macd", fast, slow, signal_period, component.value)
         if key in self._cache:
             return self._cache[key]
-        macd_val = self.ema(PriceField.MID, fast) - self.ema(PriceField.MID, slow)
+
+        fast_ema = self.ema(PriceField.MID, fast)
+        slow_ema = self.ema(PriceField.MID, slow)
+
+        if math.isnan(fast_ema) or math.isnan(slow_ema):
+            self._cache[key] = math.nan
+            return math.nan
+
+        macd_line = fast_ema - slow_ema
+
         if component == MACDComponent.MACD:
-            self._cache[key] = macd_val
-            return macd_val
-        # signal / hist require a history of MACD values – simplified:
-        # (a full implementation would maintain a secondary EMA buffer)
-        self._cache[key] = math.nan
-        return math.nan
+            self._cache[key] = macd_line
+            return macd_line
+
+        # ── Signal & Histogram: need a history of MACD line values ────────
+        hist_key = ("macd_hist", fast, slow)
+        macd_deque = self._macd_hist.setdefault(hist_key, deque(maxlen=self._MAX_BUF))
+        # Append current value (this mutates state, but is idempotent per tick
+        # because _cache is cleared on push() and we only reach here once per tick)
+        if not macd_deque or macd_deque[-1] != macd_line:
+            macd_deque.append(macd_line)
+
+        if len(macd_deque) < signal_period:
+            self._cache[key] = math.nan
+            return math.nan
+
+        # Signal = EMA(macd_line, signal_period)
+        buf = list(macd_deque)
+        k   = 2.0 / (signal_period + 1)
+        sig = sum(buf[:signal_period]) / signal_period
+        for v in buf[signal_period:]:
+            sig = v * k + sig * (1 - k)
+
+        if component == MACDComponent.SIGNAL:
+            self._cache[key] = sig
+            return sig
+
+        # Histogram
+        hist = macd_line - sig
+        self._cache[key] = hist
+        return hist
 
 
 class _NullSeries(PriceSeries):
     """Stub returned as prev_snapshot before the first tick."""
-    def current(self, *_):        return math.nan
-    def ago(self, *_):            return math.nan
-    def buffer(self, *_):         return []
-    def ema(self, *_):            return math.nan
-    def rsi(self, *_):            return math.nan
-    def bollinger(self, *_):      return math.nan
-    def macd(self, *_):           return math.nan
+    def __init__(self) -> None:
+        # Don't call super().__init__() — we override everything
+        self._bufs      = {}
+        self._cache     = {}
+        self._macd_hist = {}
+        self.prev_snapshot = self   # circular — but never queried deeper
+
+    def current(self, *_):    return math.nan
+    def ago(self, *_):        return math.nan
+    def buffer(self, *_):     return []
+    def ema(self, *_):        return math.nan
+    def rsi(self, *_):        return math.nan
+    def bollinger(self, *_):  return math.nan
+    def macd(self, *_):       return math.nan
+    def push(self, *_):       pass
 
 
 class _SnapShot(PriceSeries):
-    """Captures current state so crossover conditions can compare prev tick."""
+    """Lightweight copy of PriceSeries state for crossover detection (prev tick)."""
     def __init__(self, src: PriceSeries) -> None:
-        self._bufs       = {k: deque(v) for k, v in src._bufs.items()}
-        self._cache      = dict(src._cache)
-        self.prev_snapshot = src.prev_snapshot
+        self._bufs         = {k: deque(v) for k, v in src._bufs.items()}
+        self._cache        = dict(src._cache)
+        self._macd_hist    = {k: deque(v) for k, v in src._macd_hist.items()}
+        self.prev_snapshot = src.prev_snapshot   # chain doesn't need to go deeper
 
     def push(self, *_):
         raise RuntimeError("Cannot push to a snapshot")
 
 
 # ---------------------------------------------------------------------------
-# 8. RuleSetStrategy  (wraps a RuleSet into the Strategy interface)
+# 8. RuleSetStrategy  (wraps RuleSet into the Strategy interface)
 # ---------------------------------------------------------------------------
 
-from strategy import Strategy  # noqa: E402  (import after dataclasses)
+from strategy import Strategy  # noqa: E402
 
 
 class RuleSetStrategy(Strategy):
-    """
-    Evaluates a RuleSet on every tick and emits SignalEvents.
-
-    Role → action mapping
-    ─────────────────────
-    entry_long   → buy
-    exit_long    → sell   (reduce/close long)
-    entry_short  → short
-    exit_short   → cover  (reduce/close short)
-    """
-
     _ROLE_TO_ACTION: Dict[RuleRole, str] = {
         RuleRole.ENTRY_LONG:  "buy",
         RuleRole.EXIT_LONG:   "sell",
@@ -649,7 +761,9 @@ class RuleSetStrategy(Strategy):
 
         signals: List[SignalEvent] = []
         for rule in self.rule_set.rules:
-            if rule.evaluate(series):
+            # Pass tick + portfolio context if available (engine sets _portfolio)
+            portfolio = getattr(self, "_portfolio", None)
+            if rule.evaluate(series, portfolio=portfolio, tick=tick):
                 action = self._ROLE_TO_ACTION.get(rule.role)
                 if action:
                     signals.append(SignalEvent(
@@ -681,38 +795,37 @@ register_strategy(
 
 
 # ---------------------------------------------------------------------------
-# 10. Schema introspection helpers  (used by the API)
+# 10. Schema introspection helpers
 # ---------------------------------------------------------------------------
 
 OPERAND_SCHEMA = {
-    "constant":  {"params": [{"name": "value",     "type": "number", "label": "Value"}]},
-    "price":     {"params": [{"name": "field",     "type": "select", "label": "Field",
+    "constant":  {"params": [{"name": "value",      "type": "number",  "label": "Value"}]},
+    "price":     {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]}]},
-    "lookback":  {"params": [{"name": "field",     "type": "select", "label": "Field",
+    "lookback":  {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]},
-                              {"name": "period",   "type": "integer", "label": "Bars ago", "min": 1}]},
-    "sma":       {"params": [{"name": "field",     "type": "select", "label": "Field",
+                              {"name": "period",    "type": "integer", "label": "Bars ago", "min": 1}]},
+    "sma":       {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]},
-                              {"name": "period",   "type": "integer", "label": "Period", "min": 2}]},
-    "ema":       {"params": [{"name": "field",     "type": "select", "label": "Field",
+                              {"name": "period",    "type": "integer", "label": "Period",   "min": 2}]},
+    "ema":       {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]},
-                              {"name": "period",   "type": "integer", "label": "Period", "min": 2}]},
-    "rsi":       {"params": [{"name": "field",     "type": "select", "label": "Field",
+                              {"name": "period",    "type": "integer", "label": "Period",   "min": 2}]},
+    "rsi":       {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]},
-                              {"name": "period",   "type": "integer", "label": "Period", "min": 2}]},
-    "bollinger": {"params": [{"name": "field",     "type": "select", "label": "Field",
+                              {"name": "period",    "type": "integer", "label": "Period",   "min": 2}]},
+    "bollinger": {"params": [{"name": "field",      "type": "select",  "label": "Field",
                                "options": [f.value for f in PriceField]},
-                              {"name": "period",   "type": "integer", "label": "Period", "min": 2},
-                              {"name": "std_dev",  "type": "number",  "label": "Std Dev"},
-                              {"name": "component","type": "select",  "label": "Component",
-                               "options": [c.value for c in BollingerComponent]}]},
-    "macd":      {"params": [{"name": "fast",      "type": "integer", "label": "Fast period", "min": 1},
-                              {"name": "slow",      "type": "integer", "label": "Slow period", "min": 1},
-                              {"name": "signal",    "type": "integer", "label": "Signal period", "min": 1},
+                              {"name": "period",    "type": "integer", "label": "Period",   "min": 2},
+                              {"name": "std_dev",   "type": "number",  "label": "Std Dev"},
                               {"name": "component", "type": "select",  "label": "Component",
+                               "options": [c.value for c in BollingerComponent]}]},
+    "macd":      {"params": [{"name": "fast",       "type": "integer", "label": "Fast",    "min": 1},
+                              {"name": "slow",       "type": "integer", "label": "Slow",    "min": 1},
+                              {"name": "signal",     "type": "integer", "label": "Signal",  "min": 1},
+                              {"name": "component",  "type": "select",  "label": "Component",
                                "options": [c.value for c in MACDComponent]}]},
 }
 
 OPERATOR_OPTIONS = [op.value for op in Operator]
-
 ROLE_OPTIONS     = [r.value for r in RuleRole]

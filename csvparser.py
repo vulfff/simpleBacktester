@@ -1,58 +1,194 @@
+"""
+csvparser.py
+============
+Reads a CSV file and yields TickData objects.
+
+The column_map dict maps internal field names → CSV column headers:
+  {
+    "time":   "timestamp",   # datetime column
+    "bid":    "bid",
+    "ask":    "ask",         # optional – falls back to bid if missing
+    "volume": "volume",      # optional
+    "name":   "symbol",      # optional – overridden by symbol arg
+  }
+
+Rows where the price columns cannot be parsed are silently skipped.
+"""
+
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+import math
 from datetime import datetime
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterator, Optional
 
 from tickdata import TickData
 
 
-@dataclass
+# Common datetime formats to try when no explicit format is given.
+_FALLBACK_FORMATS = [
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%d %H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%d",
+    "%d/%m/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y",
+    "%d/%m/%Y",
+    "%Y%m%d",
+    "%Y%m%d%H%M%S",
+]
+
+
+def _parse_dt(raw: str, fmt: Optional[str] = None) -> datetime:
+    """Parse a datetime string, trying fmt first then a list of fallbacks."""
+    raw = raw.strip()
+    if fmt:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            pass
+    for f in _FALLBACK_FORMATS:
+        try:
+            return datetime.strptime(raw, f)
+        except ValueError:
+            continue
+    # Last resort: try treating it as a unix timestamp (float seconds)
+    try:
+        return datetime.utcfromtimestamp(float(raw))
+    except (ValueError, OSError, OverflowError):
+        pass
+    raise ValueError(f"Cannot parse datetime: {raw!r}")
+
+
+def _safe_float(val: str) -> Optional[float]:
+    """Return float or None if the value is empty / non-numeric."""
+    val = val.strip().replace(",", "")
+    if not val:
+        return None
+    try:
+        v = float(val)
+        return v if math.isfinite(v) else None
+    except ValueError:
+        return None
+
+
 class CSVTickDataFeed:
-	file_path: str
-	column_map: Dict[str, str]
-	symbol: Optional[str] = None
-	time_format: Optional[str] = None
+    """
+    Iterable that yields TickData from a CSV file.
 
-	def __iter__(self) -> Iterable[TickData]:
-		with open(self.file_path, "r", newline="") as handle:
-			reader = csv.DictReader(handle)
-			for row in reader:
-				tick = self._parse_row(row)
-				if tick is not None:
-					yield tick
+    Parameters
+    ----------
+    file_path   : path to the CSV file
+    column_map  : maps internal keys (time, bid, ask, volume, name)
+                  to actual CSV column headers
+    symbol      : overrides the name column (or provides a default)
+    time_format : strftime format string for parsing timestamps
+    """
 
-	def _parse_row(self, row: Dict[str, str]) -> Optional[TickData]:
-		try:
-			name = self._get_value(row, "name")
-			if not name:
-				name = self.symbol or "UNKNOWN"
+    # Default mapping – covers many common OHLCV exports
+    DEFAULT_MAP: Dict[str, str] = {
+        "time":   "timestamp",
+        "bid":    "bid",
+        "ask":    "ask",
+        "volume": "volume",
+        "name":   "symbol",
+    }
 
-			time_value = self._get_value(row, "time")
-			time = self._parse_time(time_value)
+    # Alternative column names tried when the mapped column is absent
+    _ALIASES: Dict[str, list[str]] = {
+        "time":   ["timestamp", "date", "datetime", "time", "Date", "DateTime", "Timestamp"],
+        "bid":    ["bid", "close", "Close", "price", "Price", "last", "Last", "open", "Open"],
+        "ask":    ["ask", "Ask"],
+        "volume": ["volume", "Volume", "vol", "Vol"],
+        "name":   ["symbol", "Symbol", "ticker", "Ticker", "asset", "name"],
+    }
 
-			bid = self._parse_float(self._get_value(row, "bid"))
-			ask = self._parse_float(self._get_value(row, "ask"))
-			volume = self._parse_float(self._get_value(row, "volume"))
+    def __init__(
+        self,
+        file_path: str,
+        column_map: Optional[Dict[str, str]] = None,
+        symbol: Optional[str] = None,
+        time_format: Optional[str] = None,
+    ) -> None:
+        self.file_path   = file_path
+        self.column_map  = {**self.DEFAULT_MAP, **(column_map or {})}
+        self.symbol      = symbol
+        self.time_format = time_format
 
-			return TickData(name=name, bid=bid, ask=ask, volume=volume, time=time)
-		except Exception:
-			return None
+    # ------------------------------------------------------------------
 
-	def _get_value(self, row: Dict[str, str], logical_name: str) -> str:
-		column = self.column_map.get(logical_name, "")
-		return row.get(column, "") if column else ""
+    def __iter__(self) -> Iterator[TickData]:
+        with open(self.file_path, newline="", encoding="utf-8-sig") as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None:
+                return
 
-	def _parse_float(self, value: str) -> float:
-		return float(value) if value not in (None, "") else 0.0
+            headers = set(reader.fieldnames)
 
-	def _parse_time(self, value: str) -> datetime:
-		if not value:
-			return datetime.utcnow()
-		if self.time_format:
-			return datetime.strptime(value, self.time_format)
-		try:
-			return datetime.fromisoformat(value)
-		except ValueError:
-			return datetime.utcnow()
+            # Resolve column names: prefer explicit map, fall back to aliases
+            def resolve(key: str) -> Optional[str]:
+                mapped = self.column_map.get(key, "")
+                if mapped and mapped in headers:
+                    return mapped
+                for alias in self._ALIASES.get(key, []):
+                    if alias in headers:
+                        return alias
+                return None
+
+            col_time   = resolve("time")
+            col_bid    = resolve("bid")
+            col_ask    = resolve("ask")
+            col_volume = resolve("volume")
+            col_name   = resolve("name")
+
+            if col_bid is None:
+                raise ValueError(
+                    f"Could not find a price/bid column in CSV. "
+                    f"Headers found: {list(reader.fieldnames)}. "
+                    f"column_map supplied: {self.column_map}"
+                )
+
+            default_name = self.symbol or "ASSET"
+            skipped = 0
+
+            for row in reader:
+                # --- price --------------------------------------------------
+                bid = _safe_float(row.get(col_bid, ""))
+                if bid is None:
+                    skipped += 1
+                    continue
+
+                ask_raw = _safe_float(row.get(col_ask, "")) if col_ask else None
+                ask = ask_raw if ask_raw is not None else bid
+
+                volume = _safe_float(row.get(col_volume, "")) if col_volume else 0.0
+                if volume is None:
+                    volume = 0.0
+
+                # --- timestamp ----------------------------------------------
+                if col_time and row.get(col_time, "").strip():
+                    try:
+                        dt = _parse_dt(row[col_time], self.time_format)
+                    except ValueError:
+                        dt = datetime.utcnow()
+                else:
+                    dt = datetime.utcnow()
+
+                # --- symbol -------------------------------------------------
+                if self.symbol:
+                    name = self.symbol
+                elif col_name and row.get(col_name, "").strip():
+                    name = row[col_name].strip()
+                else:
+                    name = default_name
+
+                yield TickData(
+                    name=name,
+                    bid=bid,
+                    ask=ask,
+                    volume=volume,
+                    time=dt,
+                )
