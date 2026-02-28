@@ -10,7 +10,15 @@ export function AIStrategyChat({ onStrategyGenerated }) {
   const [loading, setLoading] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
   const [error, setError] = useState('');
+  const [modelName, setModelName] = useState(undefined); // undefined = loading, null = none, string = configured
   const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/db/api_keys`)
+      .then(r => r.json())
+      .then(d => setModelName(d.api_key?.model_name || null))
+      .catch(() => setModelName(null));
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -104,7 +112,18 @@ export function AIStrategyChat({ onStrategyGenerated }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
           <span style={{ fontSize: '1.2rem' }}>🤖</span>
           <div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb' }}>AI Strategy Builder</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+              AI Strategy Builder
+              {modelName ? (
+                <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#93c5fd' }}>
+                  {modelName}
+                </span>
+              ) : modelName === null ? (
+                <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>
+                  No AI model configured
+                </span>
+              ) : null}
+            </div>
             <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Natural language → Rules</div>
           </div>
         </div>

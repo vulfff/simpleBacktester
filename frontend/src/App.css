@@ -399,3 +399,26 @@ pre {
 }
 .upload-zone:hover { border-color: var(--accent); background: rgba(58,183,245,0.04); }
 .upload-zone.has-file { border-color: rgba(47,216,154,0.5); border-style: solid; }
+
+/* ── Shared page layout (Strategy Builder / Indicator Builder uniformity) ─── */
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px; margin-bottom: 1.25rem;
+}
+.page-header-text > h2 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
+.page-header-text > p  { color: var(--text-soft); font-size: 0.875rem; }
+
+.page-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.palette-block-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 9px; cursor: grab;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 0.8rem; color: var(--text-soft); user-select: none;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease), transform 100ms;
+  margin-bottom: 4px;
+}
+.palette-block-item:hover {
+  background: var(--panel2); border-color: var(--border-hi);
+  color: var(--text); transform: translateX(2px);
+}

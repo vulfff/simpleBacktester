@@ -9,7 +9,15 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [modelName, setModelName] = useState(undefined); // undefined = loading, null = none, string = configured
   const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/db/api_keys`)
+      .then(r => r.json())
+      .then(d => setModelName(d.api_key?.model_name || null))
+      .catch(() => setModelName(null));
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -91,7 +99,18 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
       }}>
         <span style={{ fontSize: '1.2rem' }}>📊</span>
         <div>
-          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb' }}>AI Indicator Builder</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+            AI Indicator Builder
+            {modelName ? (
+              <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>
+                {modelName}
+              </span>
+            ) : modelName === null ? (
+              <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>
+                No AI model configured
+              </span>
+            ) : null}
+          </div>
           <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Natural language → Expression trees</div>
         </div>
       </div>

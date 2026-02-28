@@ -166,6 +166,27 @@ function validateRules(rules) {
   return warnings;
 }
 
+function inflateStrategyConfig(configStr) {
+  try {
+    const parsed = typeof configStr === 'string' ? JSON.parse(configStr) : configStr;
+    const ruleSet = parsed.rule_set;
+    if (!ruleSet) return null;
+    return {
+      name: ruleSet.name || 'Loaded Strategy',
+      rules: (ruleSet.rules || []).map(r => ({
+        _id: uid(),
+        name: r.name || 'Rule',
+        role: r.role || 'entry_long',
+        conditions: (r.conditions || []).map(c => ({ _id: uid(), ...c })),
+        timing: r.timing || 'on_change',
+        quantity: r.quantity ?? 1,
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 const iStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', width: 75, outline: 'none' };
 const sStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', outline: 'none' };
 const PRICE_FIELDS = ['bid','ask','mid','volume'];
@@ -333,7 +354,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
 
   return (
     <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', background: '#0f172a', borderBottom: '1px solid #1f2937', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', background: '#0f172a', borderBottom: '1px solid #1f2937', flexWrap: 'wrap', flexShrink: 0 }}>
         <input value={rule.name} onChange={e => onChange({ ...rule, name: e.target.value })}
           style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none' }} />
         <select value={rule.role}
@@ -347,7 +368,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
         </button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '10px 20px', background: '#0b1120', borderBottom: '1px solid #1f2937', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '10px 20px', background: '#0b1120', borderBottom: '1px solid #1f2937', flexWrap: 'wrap', flexShrink: 0 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280' }}>Fire</span>
           <select value={rule.timing} style={sStyle} onChange={e => onChange({ ...rule, timing: e.target.value })}>
@@ -377,7 +398,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
           />
         ))}
 
-        <div style={{ position: 'relative', marginTop: 10 }}>
+        <div style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button"
               style={{ flex: 1, background: '#0f172a', border: '1px dashed #334155', borderRadius: 10, padding: '10px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s' }}
@@ -401,7 +422,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
           </div>
 
           {showPicker && (
-            <div style={{ position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 14, padding: '12px', marginTop: 6, maxHeight: 400, overflowY: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.7)' }}>
+            <div style={{ background: '#0f172a', border: '1px solid #1f2937', borderRadius: 14, padding: '12px', marginTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 4, background: '#111827', borderRadius: 8, padding: 3 }}>
                   {[{ id:'signal', label:'📊 Signal' },{ id:'exit', label:'🎯 Exit / P&L' }].map(t => (
@@ -481,6 +502,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
 export default function StrategyBuilder() {
   const [ruleSetName, setRuleSetName] = useState('My Strategy');
   const [rules, setRules]             = useState([defaultRule('entry_long'), defaultRule('exit_long')]);
+  const [selectedRole, setSelectedRole] = useState('entry_long');
   const [activeId, setActiveId]       = useState(rules[0]._id);
   const [saving, setSaving]           = useState(false);
   const [showJson, setShowJson]       = useState(false);
@@ -488,12 +510,28 @@ export default function StrategyBuilder() {
   const [mode, setMode]               = useState('build'); // 'build' | 'ai-strategy' | 'ai-indicator'
   const [aiGeneratedStrategy, setAiGeneratedStrategy] = useState(null);
   const [aiWarnings, setAiWarnings]   = useState([]);
+  const [savedStrategies, setSavedStrategies] = useState([]);
+  const [showLoad, setShowLoad]       = useState(false);
 
   useEffect(() => { fetch(`${API_BASE}/db/indicators`).then(r=>r.json()).then(d=>setCIs(d.indicators||[])).catch(()=>{}); }, []);
+  useEffect(() => { fetch(`${API_BASE}/db/strategies`).then(r=>r.json()).then(d=>setSavedStrategies(d.strategies||[])).catch(()=>{}); }, []);
 
-  const addRule = (role = 'entry_long') => { const r = defaultRule(role); setRules(p=>[...p,r]); setActiveId(r._id); };
+  const addRule = (role = 'entry_long') => { const r = defaultRule(role); setRules(p=>[...p,r]); setActiveId(r._id); setSelectedRole(role); };
   const updateRule = useCallback(u => setRules(p => p.map(r => r._id===u._id?u:r)), []);
-  const deleteRule = id => { const rest = rules.filter(r=>r._id!==id); setRules(rest); if(activeId===id) setActiveId(rest[0]?._id??null); };
+  const deleteRule = id => { 
+    const rest = rules.filter(r=>r._id!==id); 
+    setRules(rest); 
+    if(activeId===id) {
+      // Set active to the first rule in the same role group, or first rule overall
+      const currentRole = rules.find(r=>r._id===id)?.role;
+      const sameRoleRules = rest.filter(r=>r.role===currentRole);
+      if(sameRoleRules.length > 0) {
+        setActiveId(sameRoleRules[0]._id);
+      } else {
+        setActiveId(rest[0]?._id ?? null);
+      }
+    }
+  };
 
   // Handle AI-generated strategies
   const handleStrategyGenerated = (aiResult) => {
@@ -514,6 +552,7 @@ export default function StrategyBuilder() {
     if (convertedRules.length > 0) {
       setRules(convertedRules);
       setActiveId(convertedRules[0]._id);
+      setSelectedRole(convertedRules[0].role);
       setMode('build');
     }
   };
@@ -521,58 +560,52 @@ export default function StrategyBuilder() {
   const payload = ruleSetToJson(ruleSetName, rules);
   const warnings = validateRules(rules);
   const activeRule = rules.find(r => r._id === activeId);
+  const rulesForRole = rules.filter(r => r.role === selectedRole);
 
   const save = async () => {
     setSaving(true);
     try {
       await fetch(`${API_BASE}/db/strategies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ strategies:[{ name:ruleSetName, logic:'rule_based', config:JSON.stringify({ rule_set:payload }) }] }) });
+      setSavedStrategies(prev => {
+        const exists = prev.some(s => s.name === ruleSetName);
+        return exists ? prev : [...prev, { name: ruleSetName }];
+      });
       alert('Strategy saved!');
     } catch { alert('Failed to save.'); }
     finally { setSaving(false); }
   };
 
+  const loadStrategy = (s) => {
+    const inflated = inflateStrategyConfig(s.config);
+    if (!inflated || !inflated.rules.length) { alert('Could not load strategy — config may be empty.'); return; }
+    setRuleSetName(inflated.name);
+    setRules(inflated.rules);
+    setActiveId(inflated.rules[0]._id);
+    setSelectedRole(inflated.rules[0].role);
+    setShowLoad(false);
+    setMode('build');
+  };
+
   const roleGroups = [
-    { label: 'Long Entry (Buy)',  color: '#34d399', role: 'entry_long'  },
-    { label: 'Long Exit (Sell)',  color: '#f87171', role: 'exit_long'   },
-    { label: 'Short Entry',       color: '#fb923c', role: 'entry_short' },
-    { label: 'Short Exit',        color: '#a78bfa', role: 'exit_short'  },
+    { label: '🟢 Entry Long',  color: '#34d399', role: 'entry_long',  description: 'When to buy' },
+    { label: '🔴 Exit Long',   color: '#f87171', role: 'exit_long',   description: 'When to sell' },
+    { label: '🟠 Entry Short', color: '#fb923c', role: 'entry_short', description: 'When to short' },
+    { label: '🟣 Exit Short',  color: '#a78bfa', role: 'exit_short',  description: 'When to cover' },
   ];
+
+  const pillStyle = { border: '1px solid #334155', borderRadius: 999, padding: '6px 14px', background: '#0f172a', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.15s', outline: 'none', fontWeight: 500 };
 
   return (
     <div className="view">
       <h2>Strategy Builder</h2>
-      <p>Build trading rules. Every entry needs a matching exit rule — warnings will appear if something is missing.</p>
+      <p>Build trading rules for each role. Every entry needs a matching exit rule — warnings will appear if something is missing.</p>
 
       {/* Mode selector */}
-      <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0 1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
-        <button
-          onClick={() => setMode('build')}
-          style={{
-            padding: '8px 16px',
-            background: mode === 'build' ? '#3b82f6' : '#1e293b',
-            border: 'none',
-            borderRadius: 6,
-            color: mode === 'build' ? '#ffffff' : '#9ca3af',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: mode === 'build' ? 600 : 400
-          }}
-        >
+      <div className="tab-strip" style={{ margin: '1.5rem 0 1rem', width: 'fit-content' }}>
+        <button className={`tab-btn${mode === 'build' ? ' active' : ''}`} onClick={() => setMode('build')}>
           ◆ Manual Builder
         </button>
-        <button
-          onClick={() => setMode('ai-strategy')}
-          style={{
-            padding: '8px 16px',
-            background: mode === 'ai-strategy' ? '#3b82f6' : '#1e293b',
-            border: 'none',
-            borderRadius: 6,
-            color: mode === 'ai-strategy' ? '#ffffff' : '#9ca3af',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: mode === 'ai-strategy' ? 600 : 400
-          }}
-        >
+        <button className={`tab-btn${mode === 'ai-strategy' ? ' active' : ''}`} onClick={() => setMode('ai-strategy')}>
           🤖 AI Strategy
         </button>
       </div>
@@ -604,20 +637,8 @@ export default function StrategyBuilder() {
                 <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#93c5fd', fontSize: '0.7rem', overflow: 'auto', maxHeight: 300 }}>
                   {JSON.stringify(aiGeneratedStrategy, null, 2)}
                 </pre>
-                <button
-                  onClick={() => setMode('build')}
-                  style={{
-                    marginTop: 12,
-                    padding: '8px 16px',
-                    background: '#34d399',
-                    border: 'none',
-                    borderRadius: 6,
-                    color: '#0f172a',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    width: '100%'
-                  }}
-                >
+                <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
+                  onClick={() => setMode('build')}>
                   Edit in Manual Builder
                 </button>
               </>
@@ -634,63 +655,140 @@ export default function StrategyBuilder() {
       {mode === 'build' && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '1.5rem 0 1rem', flexWrap: 'wrap' }}>
-        <input value={ruleSetName} onChange={e => setRuleSetName(e.target.value)}
-          style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '7px 14px', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none', minWidth: 160 }} />
-        <button type="button" style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
-          onClick={() => setShowJson(s=>!s)}>{showJson ? 'Hide JSON' : 'View JSON'}</button>
-        <button type="button" style={{ marginLeft: 'auto', background: saving?'#1e293b':'linear-gradient(135deg,#6366f1,#22d3ee)', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#0f172a', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}
-          onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Strategy'}</button>
-      </div>
+            <input value={ruleSetName} onChange={e => setRuleSetName(e.target.value)}
+              style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '7px 14px', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none', minWidth: 160 }} />
+            <button type="button" style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
+              onClick={() => setShowJson(s=>!s)}>{showJson ? 'Hide JSON' : 'View JSON'}</button>
 
-      {warnings.map((w, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, fontSize: '0.84rem', color: '#fbbf24' }}>
-          ⚠️ {w}
-        </div>
-      ))}
-
-      {showJson && (
-        <div style={{ background: '#0b1120', border: '1px dashed #334155', borderRadius: 12, padding: '1rem', marginBottom: 16, overflow: 'auto' }}>
-          <pre style={{ margin: 0, fontSize: '0.75rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>{JSON.stringify(payload, null, 2)}</pre>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <aside style={{ flexShrink: 0, width: 200, background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1rem', position: 'sticky', top: 0 }}>
-          {roleGroups.map(g => {
-            const groupRules = rules.filter(r => r.role === g.role);
-            return (
-              <div key={g.role} style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: g.color }}>{g.label}</span>
-                  <button type="button" onClick={() => addRule(g.role)}
-                    style={{ background: 'transparent', border: 'none', color: g.color, cursor: 'pointer', fontSize: '0.72rem', padding: '0 2px' }}>+ Add</button>
+            {/* Load Strategy dropdown */}
+            <div style={{ position: 'relative' }}>
+              <button type="button"
+                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
+                onClick={() => setShowLoad(s => !s)}>
+                📂 Load Strategy
+              </button>
+              {showLoad && (
+                <div style={{ position: 'absolute', zIndex: 50, top: 'calc(100% + 4px)', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 12, padding: '6px', minWidth: 240, maxHeight: 320, overflowY: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.7)' }}>
+                  <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', padding: '4px 8px 8px' }}>Saved Strategies</div>
+                  {savedStrategies.length === 0 ? (
+                    <div style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#4b5563' }}>No strategies saved yet.</div>
+                  ) : savedStrategies.map((s, i) => (
+                    <div key={s.id ?? i}
+                      style={{ padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem', color: '#e5e7eb', transition: 'background 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      onClick={() => loadStrategy(s)}>
+                      {s.name}
+                    </div>
+                  ))}
                 </div>
-                {groupRules.map(r => (
-                  <div key={r._id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 2, transition: 'background 0.15s',
-                      background: r._id===activeId?`${g.color}18`:'transparent', borderLeft: `2px solid ${r._id===activeId?g.color:'transparent'}` }}
-                    onClick={() => setActiveId(r._id)}>
-                    <span style={{ flex: 1, fontSize: '0.79rem', color: r._id===activeId?'#e5e7eb':'#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-                    <span style={{ fontSize: '0.63rem', color: '#4b5563' }}>{r.conditions.length}c</span>
+              )}
+            </div>
+
+            <button type="button" className="btn btn-primary btn-pill" style={{ marginLeft: 'auto' }}
+              onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save Strategy'}</button>
+          </div>
+
+          {rules.length === 0 ? (
+            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '3rem 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: '#4b5563', gap: 16, marginTop: '1.5rem' }}>
+              <span style={{ fontSize: '2.5rem' }}>◇</span>
+              <span style={{ fontSize: '1rem' }}>No rules yet — add one to get started</span>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={() => addRule('entry_long')}
+                  style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#34d399,#22d3ee)', border: 'none', borderRadius: 8, color: '#0f172a', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                  + Entry Rule
+                </button>
+                <button type="button" onClick={() => addRule('exit_long')}
+                  style={{ padding: '8px 18px', background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#9ca3af', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  + Exit Rule
+                </button>
+              </div>
+            </div>
+          ) : (<>
+
+          {warnings.map((w, i) => (
+            <div key={i} className="alert alert-warn" style={{ marginBottom: 8 }}>⚠️ {w}</div>
+          ))}
+
+          {showJson && (
+            <div style={{ background: '#0b1120', border: '1px dashed #334155', borderRadius: 12, padding: '1rem', marginBottom: 16, overflow: 'auto' }}>
+              <pre style={{ margin: 0, fontSize: '0.75rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>{JSON.stringify(payload, null, 2)}</pre>
+            </div>
+          )}
+
+          {/* Role selector pills */}
+          <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0 1.5rem', flexWrap: 'wrap' }}>
+            {roleGroups.map(g => {
+              const count = rules.filter(r => r.role === g.role).length;
+              return (
+                <button key={g.role}
+                  onClick={() => { setSelectedRole(g.role); const first = rules.find(r => r.role === g.role); if(first) setActiveId(first._id); }}
+                  style={{ 
+                    ...pillStyle,
+                    background: selectedRole === g.role ? `${g.color}22` : '#0f172a',
+                    borderColor: selectedRole === g.role ? g.color : '#334155',
+                    color: selectedRole === g.role ? g.color : '#9ca3af',
+                  }}>
+                  {g.label} <span style={{ fontSize: '0.7rem', marginLeft: 6, opacity: 0.7 }}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Main canvas area */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+            {rulesForRole.length === 0 ? (
+              <div style={{ 
+                background: '#111827', 
+                border: '1px solid #1f2937', 
+                borderRadius: 16, 
+                padding: '3rem 2rem',
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                minHeight: 300,
+                color: '#4b5563', 
+                gap: 12 
+              }}>
+                <span style={{ fontSize: '2.5rem' }}>◇</span>
+                <span style={{ fontSize: '1rem' }}>No rules for this role yet</span>
+                <button type="button" 
+                  onClick={() => addRule(selectedRole)}
+                  style={{ 
+                    marginTop: 12,
+                    padding: '8px 16px', 
+                    background: 'linear-gradient(135deg, #6366f1, #22d3ee)',
+                    border: 'none',
+                    borderRadius: 8,
+                    color: '#0f172a',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '0.9rem'
+                  }}>
+                  + Create Rule
+                </button>
+              </div>
+            ) : (
+              <div>
+                {rulesForRole.map((r, idx) => (
+                  <div key={r._id} style={{ marginBottom: idx < rulesForRole.length - 1 ? 16 : 0 }}>
+                    <RuleEditor 
+                      rule={r} 
+                      onChange={updateRule} 
+                      onDelete={() => deleteRule(r._id)} 
+                      customIndicators={customIndicators} 
+                    />
                   </div>
                 ))}
-                {groupRules.length === 0 && <div style={{ fontSize: '0.73rem', color: '#374151', padding: '3px 6px', fontStyle: 'italic' }}>None</div>}
+                <button type="button" className="btn" onClick={() => addRule(selectedRole)}
+                  style={{ width: '100%', marginTop: 16, borderStyle: 'dashed' }}>
+                  + Add Another Rule
+                </button>
               </div>
-            );
-          })}
-        </aside>
-
-        <div style={{ flex: 1, minWidth: 0, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
-          {!activeRule ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#4b5563', gap: 8 }}>
-              <span style={{ fontSize: '2rem' }}>◇</span>
-              <span>Select a rule from the sidebar</span>
-            </div>
-          ) : (
-            <RuleEditor key={activeRule._id} rule={activeRule} onChange={updateRule} onDelete={() => deleteRule(activeRule._id)} customIndicators={customIndicators} />
-          )}
-        </div>
-        </div>
+            )}
+          </div>
+          </>)}
         </>
       )}
     </div>

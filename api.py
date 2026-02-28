@@ -32,9 +32,17 @@ from pydantic import BaseModel, Field
 from actionmanager import ActionManager
 from csvparser import CSVTickDataFeed
 from engine import BacktestEngine
+from fill_model import FillModel
+from metrics import compute_metrics
 from portfolio import Portfolio
 from strategy import create_strategy, list_strategies
-from db import get_db_conn, create_tables, encrypt_with_password, decrypt_with_password
+from db import (
+    get_db_conn, create_tables, encrypt_with_password, decrypt_with_password,
+    save_run, list_runs, get_run, delete_run, delete_all_runs, delete_runs_batch,
+    list_data_keys, save_data_key, activate_data_key, delete_data_key, get_active_data_key,
+    list_model_keys, save_model_key, activate_model_key, delete_model_key, get_active_model_key,
+    _infer_provider,
+)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -59,6 +67,13 @@ app.add_middleware(
 # Ensure DB schema exists at startup
 create_tables()
 
+# Seed pre-built strategies/indicators if they don't exist yet (idempotent)
+try:
+    from seed_prebuilts import seed as _seed_prebuilts
+    _seed_prebuilts()
+except Exception:
+    pass
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class BacktestResult(BaseModel):
@@ -69,6 +84,12 @@ class BacktestResult(BaseModel):
     last_prices: Dict[str, float]
     trades: int = 0
     warnings: List[str] = Field(default_factory=list)
+    run_id: Optional[int] = None
+    warmup_bars: int = 0
+    equity_curve: List[Dict[str, Any]] = Field(default_factory=list)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    trade_log: List[Dict[str, Any]] = Field(default_factory=list)
+    signal_log: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -123,14 +144,8 @@ def ai_build_strategy(request: AIStrategyRequest) -> AIStrategyResponse:
     "Create a moving average crossover strategy. Buy when 20-period SMA crosses 
      above 50-period SMA. Sell when it crosses back below. Use 1.0 quantity per trade."
     """
-    from ai_strategy_builder import get_ai_provider
-    
     try:
-        # Get provider from database (with optional password for decryption)
-        if request.password:
-            provider = get_ai_provider_with_password(request.password)
-        else:
-            provider = get_ai_provider()
+        provider = get_ai_provider_with_password(request.password)
         
         strategy = provider.build_from_prompt(
             user_prompt=request.prompt,
@@ -160,50 +175,132 @@ def ai_build_strategy(request: AIStrategyRequest) -> AIStrategyResponse:
         raise HTTPException(500, f"Failed to generate strategy: {str(exc)}") from exc
 
 
-def get_ai_provider_with_password(password: str):
-    """Helper to get AI provider with password-decrypted keys."""
+def get_ai_provider_with_password(password: Optional[str]):
+    """Helper to get AI provider using the active model key from the multi-key store.
+
+    Accepts password=None for unprotected (base64-only) keys.
+    """
     from ai_strategy_builder import AnthropicProvider, OpenAIProvider, GrokProvider, GeminiProvider
-    
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT service, model_name, model_key, protected FROM api_keys LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
-    
-    if not row:
-        raise ValueError("No AI provider configured in database")
-    
-    provider_name = row["service"]
-    model_name = row["model_name"]
-    is_protected = bool(row["protected"])
-    enc_key = row["model_key"]
-    
-    # Decrypt if needed
+
+    key_rec = get_active_model_key()
+    if not key_rec:
+        raise ValueError("No AI model configured. Add one in Key Manager.")
+
+    model_name    = key_rec["model_name"]
+    provider_name = key_rec["provider"] or _infer_provider(model_name)
+    enc_key       = key_rec["key_data"] or ""
+    is_protected  = bool(key_rec["protected"])
+
     if is_protected:
+        if not password:
+            raise ValueError("LLM API key is encrypted. Please provide your password.")
         try:
-            api_key = decrypt_with_password(password, enc_key)
+            api_key = decrypt_with_password(password, enc_key).strip()
         except Exception:
             raise ValueError("Failed to decrypt LLM API key. Check your password.")
     else:
-        import base64
         try:
-            api_key = base64.b64decode(enc_key).decode()
+            api_key = base64.b64decode(enc_key).decode().strip()
         except Exception:
-            api_key = enc_key
-    
-    # Map provider
+            api_key = enc_key.strip()
+
     PROVIDERS = {
         "anthropic": AnthropicProvider,
-        "openai": OpenAIProvider,
-        "grok": GrokProvider,
-        "gemini": GeminiProvider,
+        "openai":    OpenAIProvider,
+        "grok":      GrokProvider,
+        "gemini":    GeminiProvider,
     }
-    
+
     ProviderClass = PROVIDERS.get(provider_name.lower())
     if not ProviderClass:
-        raise ValueError(f"Unknown provider: {provider_name}")
-    
+        raise ValueError(f"Unknown AI provider: {provider_name!r}")
+
     return ProviderClass(api_key=api_key, model_name=model_name)
+
+
+class ListModelsRequest(BaseModel):
+    """Request to fetch available models from a provider's live API."""
+    provider: str = Field(..., description="Provider: anthropic, openai, grok, or gemini")
+    api_key: str  = Field(..., description="Plain (unencrypted) API key typed by user before saving")
+
+
+@app.post("/ai/list-models")
+async def ai_list_models(request: ListModelsRequest) -> Dict[str, Any]:
+    """
+    Fetch the list of available models from a provider's API using the supplied key.
+
+    This endpoint is called before saving a key — it receives the raw plaintext key.
+    Returns a filtered list of model IDs suitable for use with AI strategy/indicator generation.
+    """
+    import httpx
+
+    provider = request.provider.lower().strip()
+    key = request.api_key.strip()
+
+    if not key:
+        raise HTTPException(400, "api_key is required")
+
+    try:
+        if provider == "anthropic":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+                )
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, f"Anthropic error: {resp.text}")
+            models = [m["id"] for m in resp.json().get("data", [])]
+
+        elif provider == "openai":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, f"OpenAI error: {resp.text}")
+            all_ids = [m["id"] for m in resp.json().get("data", [])]
+            prefixes = ("gpt-", "o1", "o3", "o4")
+            models = sorted([mid for mid in all_ids if any(mid.startswith(p) for p in prefixes)])
+
+        elif provider == "grok":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.x.ai/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, f"xAI error: {resp.text}")
+            all_ids = [m["id"] for m in resp.json().get("data", [])]
+            models = sorted([mid for mid in all_ids if mid.startswith("grok")])
+
+        elif provider == "gemini":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": key},
+                )
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, f"Google error: {resp.text}")
+            models = []
+            for m in resp.json().get("models", []):
+                if "generateContent" in m.get("supportedGenerationMethods", []):
+                    name = m.get("name", "").replace("models/", "")
+                    if name:
+                        models.append(name)
+            models = sorted(models)
+
+        else:
+            raise HTTPException(400, f"Unknown provider: {provider!r}. Use: anthropic, openai, grok, gemini")
+
+        return {"provider": provider, "models": models}
+
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(504, f"Timeout fetching models from {provider}")
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to fetch models: {str(exc)}") from exc
 
 
 @app.get("/ai/schema")
@@ -231,21 +328,23 @@ def ai_strategy_schema() -> Dict[str, Any]:
             "anthropic": {
                 "name": "Anthropic Claude",
                 "models": [
+                    "claude-opus-4-6",
+                    "claude-sonnet-4-6",
                     "claude-3-5-sonnet-20241022",
-                    "claude-3-opus-20240229",
-                    "claude-3-sonnet-20240229",
-                    "claude-3-haiku-20240307"
+                    "claude-3-5-haiku-20241022",
                 ],
                 "api_key_format": "sk-ant-...",
-                "get_key_url": "https://console.anthropic.com/?cpuhc=1"
+                "get_key_url": "https://console.anthropic.com/"
             },
             "openai": {
                 "name": "OpenAI GPT",
                 "models": [
-                    "gpt-4-turbo",
-                    "gpt-4",
+                    "gpt-4.1",
+                    "gpt-4.1-mini",
                     "gpt-4o",
-                    "gpt-3.5-turbo"
+                    "gpt-4o-mini",
+                    "o3",
+                    "o4-mini",
                 ],
                 "api_key_format": "sk-...",
                 "get_key_url": "https://platform.openai.com/api-keys"
@@ -253,8 +352,9 @@ def ai_strategy_schema() -> Dict[str, Any]:
             "grok": {
                 "name": "xAI Grok",
                 "models": [
+                    "grok-3",
+                    "grok-3-mini",
                     "grok-2",
-                    "grok-beta"
                 ],
                 "api_key_format": "xai-...",
                 "get_key_url": "https://console.x.ai"
@@ -262,9 +362,9 @@ def ai_strategy_schema() -> Dict[str, Any]:
             "gemini": {
                 "name": "Google Gemini",
                 "models": [
+                    "gemini-2.5-pro",
+                    "gemini-2.5-flash",
                     "gemini-2.0-flash",
-                    "gemini-1.5-pro",
-                    "gemini-1.5-flash"
                 ],
                 "api_key_format": "AIza...",
                 "get_key_url": "https://aistudio.google.com/app/apikey"
@@ -318,13 +418,9 @@ def ai_build_indicator(request: AIIndicatorRequest) -> AIIndicatorResponse:
     }
     """
     from ai_indicator_builder import build_indicator_from_prompt
-    
+
     try:
-        # Get provider from database
-        if request.password:
-            provider = get_ai_provider_with_password(request.password)
-        else:
-            provider = get_ai_provider()
+        provider = get_ai_provider_with_password(request.password)
         
         indicator = build_indicator_from_prompt(
             user_prompt=request.prompt,
@@ -413,6 +509,12 @@ async def backtest_upload(
     time_format:    Optional[str]   = Form(default=None),
     timeframe:      Optional[str]   = Form(default=None),
     starting_cash:  float           = Form(default=10_000.0),
+    # Execution options
+    sizing_mode:      str   = Form(default="fixed"),   # "fixed" | "all_in"
+    leverage:         float = Form(default=1.0),
+    commission_mode:  str   = Form(default="none"),    # "none" | "pct" | "flat"
+    commission_value: float = Form(default=0.0),
+    allow_fractional: bool  = Form(default=False),     # True = crypto (fractional units ok)
 ) -> BacktestResult:
 
     # -- parse JSON fields --
@@ -454,16 +556,26 @@ async def backtest_upload(
 
         # -- resolve strategy --
         strategy_cfg = strategy_arr[0]
-        strategy_name, strategy_config = _resolve_strategy(strategy_cfg)
+        engine_type, strategy_config = _resolve_strategy(strategy_cfg)
+        # Use the human-readable name from the frontend, fall back to engine type
+        display_name = (strategy_cfg.get("name") or "").strip() or engine_type
 
         return _run_backtest(
             csv_path=temp_path,
             column_map=column_map_dict,
             symbol=symbol,
             time_format=time_format,
-            strategy_name=strategy_name,
+            timeframe=timeframe,
+            engine_type=engine_type,
+            display_name=display_name,
             strategy_config=strategy_config,
             starting_cash=starting_cash,
+            raw_strategy_cfg=strategy_arr[0],
+            sizing_mode=sizing_mode,
+            leverage=leverage,
+            commission_mode=commission_mode,
+            commission_value=commission_value,
+            allow_fractional=allow_fractional,
         )
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -525,15 +637,23 @@ def _run_backtest(
     column_map: Dict[str, str],
     symbol: Optional[str],
     time_format: Optional[str],
-    strategy_name: str,
+    engine_type: str,
+    display_name: str,
     strategy_config: Dict[str, Any],
     starting_cash: float,
+    timeframe: Optional[str] = None,
+    raw_strategy_cfg: Optional[Dict[str, Any]] = None,
+    sizing_mode: str = "fixed",
+    leverage: float = 1.0,
+    commission_mode: str = "none",
+    commission_value: float = 0.0,
+    allow_fractional: bool = False,
 ) -> BacktestResult:
     warnings: List[str] = []
 
     # -- build strategy --
     try:
-        strategy = create_strategy(strategy_name, strategy_config)
+        strategy = create_strategy(engine_type, strategy_config)
     except KeyError as exc:
         raise HTTPException(400, f"Unknown strategy: {exc}") from exc
     except Exception as exc:
@@ -557,6 +677,12 @@ def _run_backtest(
         strategy=strategy,
         action_manager=ActionManager(),
         portfolio=portfolio,
+        fill_model=FillModel(),
+        sizing_mode=sizing_mode,
+        leverage=leverage,
+        commission_mode=commission_mode,
+        commission_value=commission_value,
+        allow_fractional=allow_fractional,
     )
 
     try:
@@ -569,6 +695,62 @@ def _run_backtest(
     if tick_count is not None and tick_count == 0:
         warnings.append("No ticks were processed. Check your CSV columns and column_map.")
 
+    warnings.extend(getattr(engine, "_fill_warnings", []))
+
+    # -- compute metrics --
+    equity_curve = getattr(engine, "_equity_curve", [])
+    trade_log_objs = portfolio.trade_log
+    mets = compute_metrics(equity_curve, trade_log_objs, starting_cash)
+
+    # -- serialise trade log --
+    trade_log_dicts = [
+        {
+            "t":      t.time,
+            "action": t.action,
+            "symbol": t.symbol,
+            "qty":    t.quantity,
+            "price":  t.price,
+        }
+        for t in trade_log_objs
+    ]
+
+    # -- serialise signal log (all signals, blocked ones have blocked=True) --
+    signal_log_dicts = getattr(engine, "_signal_log", [])
+
+    warmup = getattr(strategy, "warmup_bars", 0)
+
+    # -- persist run --
+    # Prefer explicit symbol param; fall back to the actual name used in tick data
+    # (engine._last_tick keys are the instrument names read from the feed).
+    # Never use column_map["name"] — that's a column header, not a ticker value.
+    _last_ticks = getattr(engine, "_last_tick", {})
+    ticker_key = symbol or (next(iter(_last_ticks), None)) or "ASSET"
+    start_date = equity_curve[0]["t"][:10] if equity_curve else ""
+    end_date   = equity_curve[-1]["t"][:10] if equity_curve else ""
+    try:
+        run_id = save_run(
+            strategy_name=display_name,
+            ticker=ticker_key,
+            timeframe=timeframe or "unknown",
+            start_date=start_date,
+            end_date=end_date,
+            starting_cash=starting_cash,
+            strategy_config=raw_strategy_cfg or strategy_config,
+            metrics=mets,
+            equity_curve=equity_curve,
+            trade_log=trade_log_dicts,
+            signal_log=signal_log_dicts,
+            extra_params={
+                "sizing_mode":      sizing_mode,
+                "leverage":         leverage,
+                "commission_mode":  commission_mode,
+                "commission_value": commission_value,
+                "allow_fractional": allow_fractional,
+            },
+        )
+    except Exception:
+        run_id = None  # don't fail the whole backtest if saving fails
+
     return BacktestResult(
         cash=portfolio.cash,
         asset_value=portfolio.asset_value,
@@ -577,6 +759,12 @@ def _run_backtest(
         last_prices=portfolio.last_prices,
         trades=getattr(engine, "_fill_count", 0),
         warnings=warnings,
+        run_id=run_id,
+        warmup_bars=warmup,
+        equity_curve=equity_curve,
+        metrics=mets,
+        trade_log=trade_log_dicts,
+        signal_log=signal_log_dicts,
     )
 
 
@@ -599,33 +787,27 @@ async def data_fetch(request: Request) -> Dict[str, Any]:
     if not start_date or not end_date:
         raise HTTPException(400, "start_date and end_date are required.")
 
-    # load stored key
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute("SELECT service, data_key, protected FROM api_keys LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
-
-    if not row:
+    key_rec = get_active_data_key()
+    if not key_rec:
         raise HTTPException(400, "No data API key configured. Add one in Key Manager.")
 
-    service   = row["service"] or ""
-    enc_key   = row["data_key"] or ""
-    protected = bool(row["protected"])
+    service   = key_rec["service"] or ""
+    enc_key   = key_rec["key_data"] or ""
+    protected = bool(key_rec["protected"])
 
     if protected:
         password = body.get("password", "")
         if not password:
             raise HTTPException(400, "Data key is password-protected. Supply 'password' in request.")
         try:
-            api_key = decrypt_with_password(password, enc_key)
+            api_key = decrypt_with_password(password, enc_key).strip()
         except ValueError:
             raise HTTPException(400, "Wrong password for data key.")
     else:
         try:
-            api_key = base64.b64decode(enc_key.encode()).decode()
+            api_key = base64.b64decode(enc_key.encode()).decode().strip()
         except Exception:
-            api_key = enc_key
+            api_key = enc_key.strip()
 
     if not api_key:
         raise HTTPException(400, "Data API key is empty. Update it in Key Manager.")
@@ -669,6 +851,9 @@ async def _fetch_from_provider(
         elif service == "iex-cloud":
             return await _iex_fetch(client, api_key, ticker, timeframe)
 
+        elif service == "massive":
+            return await _massive_fetch(client, api_key, ticker, start_date, end_date, timeframe)
+
         else:
             raise HTTPException(400, f"Unknown data service: {service!r}. Update Key Manager.")
 
@@ -697,7 +882,8 @@ async def _av_fetch(client, api_key, ticker, timeframe):
         rows = []
         for dt, vals in sorted(series.items()):
             close = float(vals.get("5. adjusted close") or vals.get("4. close", 0))
-            rows.append({"timestamp": dt, "bid": close, "ask": close,
+            open_ = float(vals.get("1. open", close))
+            rows.append({"timestamp": dt, "open": open_, "bid": close, "ask": close,
                           "volume": float(vals.get("6. volume", 0)), "symbol": ticker})
         return rows
     else:
@@ -717,7 +903,8 @@ async def _av_fetch(client, api_key, ticker, timeframe):
         rows = []
         for dt, vals in sorted(series.items()):
             close = float(vals.get("4. close", 0))
-            rows.append({"timestamp": dt, "bid": close, "ask": close,
+            open_ = float(vals.get("1. open", close))
+            rows.append({"timestamp": dt, "open": open_, "bid": close, "ask": close,
                           "volume": float(vals.get("5. volume", 0)), "symbol": ticker})
         return rows
 
@@ -743,7 +930,8 @@ async def _polygon_fetch(client, api_key, ticker, start_date, end_date, timefram
         import datetime as _dt
         ts = _dt.datetime.utcfromtimestamp(bar["t"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
         c = float(bar.get("c", 0))
-        rows.append({"timestamp": ts, "bid": c, "ask": c,
+        o = float(bar.get("o", c))
+        rows.append({"timestamp": ts, "open": o, "bid": c, "ask": c,
                       "volume": float(bar.get("v", 0)), "symbol": ticker})
     return rows
 
@@ -772,14 +960,17 @@ async def _yahoo_fetch(client, ticker, start_date, end_date, timeframe):
     j = r.json()
     result = j.get("chart", {}).get("result", [{}])[0]
     timestamps = result.get("timestamp", [])
-    closes  = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
-    volumes = result.get("indicators", {}).get("quote", [{}])[0].get("volume", [])
+    quote = result.get("indicators", {}).get("quote", [{}])[0]
+    closes  = quote.get("close", [])
+    opens   = quote.get("open", [])
+    volumes = quote.get("volume", [])
     rows = []
-    for ts, c, v in zip(timestamps, closes, volumes):
+    for i, (ts, c, v) in enumerate(zip(timestamps, closes, volumes)):
         if c is None:
             continue
+        o = opens[i] if i < len(opens) and opens[i] is not None else c
         dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-        rows.append({"timestamp": dt_str, "bid": float(c), "ask": float(c),
+        rows.append({"timestamp": dt_str, "open": float(o), "bid": float(c), "ask": float(c),
                       "volume": float(v or 0), "symbol": ticker})
     return rows
 
@@ -800,10 +991,12 @@ async def _finnhub_fetch(client, api_key, ticker, start_date, end_date, timefram
     j = r.json()
     if j.get("s") == "no_data":
         raise HTTPException(404, f"No data returned by Finnhub for {ticker}.")
+    opens = j.get("o", [])
     rows = []
-    for ts, c, v in zip(j.get("t", []), j.get("c", []), j.get("v", [])):
+    for i, (ts, c, v) in enumerate(zip(j.get("t", []), j.get("c", []), j.get("v", []))):
+        o = opens[i] if i < len(opens) else c
         dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-        rows.append({"timestamp": dt_str, "bid": float(c), "ask": float(c),
+        rows.append({"timestamp": dt_str, "open": float(o), "bid": float(c), "ask": float(c),
                       "volume": float(v or 0), "symbol": ticker})
     return rows
 
@@ -821,9 +1014,166 @@ async def _iex_fetch(client, api_key, ticker, timeframe):
     for b in bars:
         ts = b.get("date", "") + (" " + b.get("minute", "") if b.get("minute") else "")
         c  = float(b.get("close") or b.get("average") or 0)
-        rows.append({"timestamp": ts.strip(), "bid": c, "ask": c,
+        o  = float(b.get("open") or c)
+        rows.append({"timestamp": ts.strip(), "open": o, "bid": c, "ask": c,
                       "volume": float(b.get("volume") or 0), "symbol": ticker})
     return rows
+
+
+# ─ Massive (rebranded Polygon.io) ────────────────────────────────────────────
+
+async def _massive_fetch(client, api_key, ticker, start_date, end_date, timeframe):
+    TF_MAP = {
+        "1m": ("1", "minute"), "5m": ("5", "minute"), "15m": ("15", "minute"),
+        "30m": ("30", "minute"), "1h": ("1", "hour"), "4h": ("4", "hour"),
+        "1d": ("1", "day"), "1w": ("1", "week"), "1M": ("1", "month"),
+    }
+    mult, span = TF_MAP.get(timeframe, ("1", "day"))
+    sd = start_date[:10]
+    ed = end_date[:10]
+    url = f"https://api.massive.com/v2/aggs/ticker/{ticker}/range/{mult}/{span}/{sd}/{ed}"
+    params = {"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": api_key}
+    r = await client.get(url, params=params)
+    r.raise_for_status()
+    j = r.json()
+    rows = []
+    for bar in j.get("results", []):
+        import datetime as _dt
+        ts = _dt.datetime.utcfromtimestamp(bar["t"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        c = float(bar.get("c", 0))
+        o = float(bar.get("o", c))
+        rows.append({"timestamp": ts, "open": o, "bid": c, "ask": c,
+                      "volume": float(bar.get("v", 0)), "symbol": ticker})
+    return rows
+
+
+# ── Ticker symbol search ───────────────────────────────────────────────────────
+
+@app.get("/data/search-tickers")
+async def data_search_tickers(q: str = "", password: str = "") -> Dict[str, Any]:
+    """
+    Search for ticker symbols using the configured data provider.
+    Returns up to 20 matching results as [{symbol, name}].
+    """
+    if len(q) < 2:
+        return {"results": []}
+
+    key_rec = get_active_data_key()
+    if not key_rec:
+        raise HTTPException(400, "No data API key configured.")
+
+    service   = key_rec["service"] or ""
+    enc_key   = key_rec["key_data"] or ""
+    protected = bool(key_rec["protected"])
+
+    if protected:
+        if not password:
+            raise HTTPException(400, "Data key is password-protected. Supply 'password'.")
+        try:
+            api_key = decrypt_with_password(password, enc_key).strip()
+        except ValueError:
+            raise HTTPException(400, "Wrong password for data key.")
+    else:
+        try:
+            api_key = base64.b64decode(enc_key.encode()).decode().strip()
+        except Exception:
+            api_key = enc_key.strip()
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            results = await _search_tickers(client, service, api_key, q)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"Ticker search error: {exc}") from exc
+
+    return {"results": results[:20]}
+
+
+async def _search_tickers(client, service: str, api_key: str, q: str):
+    """Route ticker search to the correct provider. Returns [{symbol, name}]."""
+
+    if service == "alpha-vantage":
+        r = await client.get("https://www.alphavantage.co/query", params={
+            "function": "SYMBOL_SEARCH", "keywords": q, "apikey": api_key
+        })
+        r.raise_for_status()
+        matches = r.json().get("bestMatches", [])
+        return [{"symbol": m.get("1. symbol", ""), "name": m.get("2. name", "")} for m in matches]
+
+    elif service in ("polygon", "massive"):
+        base = "https://api.massive.com" if service == "massive" else "https://api.polygon.io"
+        r = await client.get(f"{base}/v3/reference/tickers", params={
+            "search": q, "active": "true", "limit": 20, "apiKey": api_key
+        })
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        return [{"symbol": m.get("ticker", ""), "name": m.get("name", "")} for m in results]
+
+    elif service == "yahoo-finance":
+        r = await client.get("https://query1.finance.yahoo.com/v1/finance/search", params={
+            "q": q, "newsCount": 0, "quotesCount": 20
+        }, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        quotes = r.json().get("quotes", [])
+        return [{"symbol": m.get("symbol", ""), "name": m.get("shortname") or m.get("longname", "")} for m in quotes if m.get("symbol")]
+
+    elif service == "finnhub":
+        r = await client.get("https://finnhub.io/api/v1/search", params={"q": q, "token": api_key})
+        r.raise_for_status()
+        results = r.json().get("result", [])
+        return [{"symbol": m.get("symbol", ""), "name": m.get("description", "")} for m in results]
+
+    elif service == "iex-cloud":
+        r = await client.get(f"https://cloud.iexapis.com/stable/search/{q}", params={"token": api_key})
+        r.raise_for_status()
+        results = r.json() if isinstance(r.json(), list) else []
+        return [{"symbol": m.get("symbol", ""), "name": m.get("securityName", "")} for m in results]
+
+    else:
+        raise HTTPException(400, f"Ticker search not supported for provider: {service!r}")
+
+
+# ── Backtest Run History ──────────────────────────────────────────────────────
+
+@app.get("/db/runs")
+def db_get_runs():
+    """List all saved backtest runs (metadata + metrics, no equity curve)."""
+    return {"runs": list_runs()}
+
+
+@app.get("/db/runs/{run_id}")
+def db_get_run(run_id: int):
+    """Fetch a full backtest run including equity curve and trade log."""
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(404, f"Run {run_id} not found.")
+    return run
+
+
+@app.delete("/db/runs/{run_id}")
+def db_delete_run(run_id: int):
+    """Delete a saved backtest run."""
+    if not delete_run(run_id):
+        raise HTTPException(404, f"Run {run_id} not found.")
+    return {"status": "ok"}
+
+
+@app.delete("/db/runs")
+def db_delete_all_runs():
+    """Delete every saved backtest run."""
+    count = delete_all_runs()
+    return {"status": "ok", "deleted": count}
+
+
+@app.post("/db/runs/batch-delete")
+async def db_delete_runs_batch(request: Request):
+    """Delete multiple runs by id. Body: { ids: [1, 2, 3] }"""
+    body = await request.json()
+    ids = [int(i) for i in body.get("ids", []) if str(i).isdigit()]
+    count = delete_runs_batch(ids)
+    return {"status": "ok", "deleted": count}
 
 
 # ── Encryption helpers ────────────────────────────────────────────────────────
@@ -893,7 +1243,7 @@ def db_get_indicators():
     conn = get_db_conn()
     cur  = conn.cursor()
     # column is `expression` in the schema
-    cur.execute("SELECT id, name, expression FROM indicators ORDER BY id")
+    cur.execute("SELECT id, name, expression, is_builtin FROM indicators ORDER BY id")
     rows = []
     for r in cur.fetchall():
         d = dict(r)
@@ -903,6 +1253,7 @@ def db_get_indicators():
             d["expr"] = json.loads(raw_expr) if raw_expr else None
         except (json.JSONDecodeError, TypeError):
             d["expr"] = None
+        d["is_builtin"] = bool(d.get("is_builtin", 0))
         rows.append(d)
     conn.close()
     return {"indicators": rows}
@@ -913,8 +1264,12 @@ def db_post_indicators(payload: Dict[str, List[Dict[str, Any]]]):
     arr = payload.get("indicators", [])
     conn = get_db_conn()
     cur  = conn.cursor()
-    cur.execute("DELETE FROM indicators")
+    # Only delete user-created indicators; leave builtins untouched
+    cur.execute("DELETE FROM indicators WHERE is_builtin = 0 OR is_builtin IS NULL")
     for ind in arr:
+        # Skip re-inserting builtins — they're already in the DB
+        if ind.get("is_builtin"):
+            continue
         expr = ind.get("expr") or ind.get("expression")
         expr_str = json.dumps(expr) if isinstance(expr, dict) else (expr or "null")
         # store name + expression; description/color go into expression JSON wrapper
@@ -935,18 +1290,111 @@ def db_post_indicators(payload: Dict[str, List[Dict[str, Any]]]):
     return {"status": "ok", "count": len(arr)}
 
 
-# ── API Keys DB ───────────────────────────────────────────────────────────────
+# ── Multi-key CRUD endpoints ──────────────────────────────────────────────────
+
+@app.get("/db/data-keys")
+def db_get_data_keys():
+    return {"keys": list_data_keys()}
+
+
+@app.post("/db/data-keys")
+async def db_post_data_key(request: Request):
+    payload   = await request.json()
+    service   = payload.get("service", "").strip()
+    raw_key   = payload.get("key", "").strip()
+    protected = bool(payload.get("protected", False))
+    password  = payload.get("password", "")
+    label     = payload.get("label", "").strip()
+    activate  = bool(payload.get("activate", True))
+
+    if not service:
+        raise HTTPException(400, "service is required")
+
+    if protected:
+        if not password:
+            raise HTTPException(400, "password required for encryption")
+        key_data = encrypt_with_password(password, raw_key)
+    else:
+        key_data = base64.b64encode(raw_key.encode()).decode()
+
+    key_id = save_data_key(service, key_data, protected, label, activate)
+    return {"id": key_id, "status": "ok"}
+
+
+@app.post("/db/data-keys/{key_id}/activate")
+def db_activate_data_key(key_id: int):
+    if not activate_data_key(key_id):
+        raise HTTPException(404, f"Data key {key_id} not found")
+    return {"status": "ok"}
+
+
+@app.delete("/db/data-keys/{key_id}")
+def db_delete_data_key(key_id: int):
+    if not delete_data_key(key_id):
+        raise HTTPException(404, f"Data key {key_id} not found")
+    return {"status": "ok"}
+
+
+@app.get("/db/model-keys")
+def db_get_model_keys():
+    return {"keys": list_model_keys()}
+
+
+@app.post("/db/model-keys")
+async def db_post_model_key(request: Request):
+    payload    = await request.json()
+    model_name = payload.get("model_name", "").strip()
+    provider   = payload.get("provider", "").strip() or _infer_provider(model_name)
+    raw_key    = payload.get("key", "").strip()
+    protected  = bool(payload.get("protected", False))
+    password   = payload.get("password", "")
+    label      = payload.get("label", "").strip()
+    activate   = bool(payload.get("activate", True))
+
+    if not model_name:
+        raise HTTPException(400, "model_name is required")
+
+    if protected:
+        if not password:
+            raise HTTPException(400, "password required for encryption")
+        key_data = encrypt_with_password(password, raw_key)
+    else:
+        key_data = base64.b64encode(raw_key.encode()).decode()
+
+    key_id = save_model_key(model_name, provider, key_data, protected, label, activate)
+    return {"id": key_id, "status": "ok"}
+
+
+@app.post("/db/model-keys/{key_id}/activate")
+def db_activate_model_key(key_id: int):
+    if not activate_model_key(key_id):
+        raise HTTPException(404, f"Model key {key_id} not found")
+    return {"status": "ok"}
+
+
+@app.delete("/db/model-keys/{key_id}")
+def db_delete_model_key(key_id: int):
+    if not delete_model_key(key_id):
+        raise HTTPException(404, f"Model key {key_id} not found")
+    return {"status": "ok"}
+
+
+# ── API Keys DB (legacy compat) ───────────────────────────────────────────────
 
 @app.get("/db/api_keys")
 def db_get_api_keys():
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute("SELECT id, service, model_name, data_key, model_key, protected FROM api_keys ORDER BY id LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
-    if not row:
+    """Backward-compat endpoint used by AI chat and Backtest to check configured keys."""
+    data_rec  = get_active_data_key()
+    model_rec = get_active_model_key()
+    if not data_rec and not model_rec:
         return {"api_key": None}
-    return {"api_key": dict(row)}
+    return {"api_key": {
+        "service":    data_rec["service"]     if data_rec  else "",
+        "model_name": model_rec["model_name"] if model_rec else "",
+        "data_key":   "configured"            if data_rec  and data_rec.get("key_data")  else "",
+        "model_key":  "configured"            if model_rec and model_rec.get("key_data") else "",
+        "protected":  0,
+    }}
 
 
 @app.post("/db/api_keys")

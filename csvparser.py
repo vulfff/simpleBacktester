@@ -100,8 +100,9 @@ class CSVTickDataFeed:
     # Alternative column names tried when the mapped column is absent
     _ALIASES: Dict[str, list[str]] = {
         "time":   ["timestamp", "date", "datetime", "time", "Date", "DateTime", "Timestamp"],
-        "bid":    ["bid", "close", "Close", "price", "Price", "last", "Last", "open", "Open"],
+        "bid":    ["bid", "close", "Close", "price", "Price", "last", "Last"],
         "ask":    ["ask", "Ask"],
+        "open":   ["open", "Open", "o"],
         "volume": ["volume", "Volume", "vol", "Vol"],
         "name":   ["symbol", "Symbol", "ticker", "Ticker", "asset", "name"],
     }
@@ -141,6 +142,7 @@ class CSVTickDataFeed:
             col_time   = resolve("time")
             col_bid    = resolve("bid")
             col_ask    = resolve("ask")
+            col_open   = resolve("open")
             col_volume = resolve("volume")
             col_name   = resolve("name")
 
@@ -163,6 +165,9 @@ class CSVTickDataFeed:
 
                 ask_raw = _safe_float(row.get(col_ask, "")) if col_ask else None
                 ask = ask_raw if ask_raw is not None else bid
+
+                open_raw = _safe_float(row.get(col_open, "")) if col_open else None
+                bar_open = open_raw if open_raw is not None else bid
 
                 volume = _safe_float(row.get(col_volume, "")) if col_volume else 0.0
                 if volume is None:
@@ -191,4 +196,5 @@ class CSVTickDataFeed:
                     ask=ask,
                     volume=volume,
                     time=dt,
+                    open=bar_open,
                 )

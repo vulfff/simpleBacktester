@@ -11,6 +11,7 @@ class Trade:
     quantity: float
     price:    float
     commission: float = 0.0
+    time:       str   = ""
 
 
 @dataclass
@@ -54,6 +55,7 @@ class Portfolio:
         quantity:   float,
         price:      float,
         commission: float = 0.0,
+        time:       str   = "",
     ) -> None:
         """
         Apply a completed fill to the portfolio.
@@ -102,7 +104,7 @@ class Portfolio:
             if abs(self.positions[name]) < 1e-9:
                 del self.positions[name]
 
-        self.trade_log.append(Trade(name, action, quantity, price, commission))
+        self.trade_log.append(Trade(name, action, quantity, price, commission, time))
         self.update_market_price(name, price)
 
     # ── repr ─────────────────────────────────────────────────────────────────

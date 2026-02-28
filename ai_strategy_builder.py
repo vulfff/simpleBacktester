@@ -7,14 +7,14 @@ Supports multiple AI providers:
 - xAI Grok
 - Google Gemini
 
-Configuration stored in database api_keys table:
-- service: "anthropic", "openai", "grok", or "gemini"
-- model_name: specific model (e.g., "claude-3-5-sonnet", "gpt-4", "grok-2")
-- model_key: API key for that provider
+Configuration stored in database model_api_keys table:
+- provider: "anthropic", "openai", "grok", or "gemini"
+- model_name: specific model (e.g., "claude-sonnet-4-6", "gpt-4o", "grok-3")
+- key_data: base64-encoded or Fernet-encrypted API key
 
 Usage:
     from ai_strategy_builder import get_ai_provider
-    
+
     provider = get_ai_provider()  # Reads from database
     strategy = provider.build_from_prompt(
         user_prompt="Buy when EMA crosses above SMA"
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 @dataclass
 class StrategySchema:
     """Defines the expected strategy JSON structure for AI generation."""
-    
+
     # Available operand types
     OPERAND_TYPES = [
         "price",        # Current price (bid, ask, mid, volume)
@@ -47,7 +47,7 @@ class StrategySchema:
         "bollinger",    # Bollinger bands
         "constant"      # Fixed number
     ]
-    
+
     # Available operators for conditions
     OPERATORS = [
         ">",            # Greater than
@@ -59,7 +59,7 @@ class StrategySchema:
         "cross_above",  # Crosses above (for indicators)
         "cross_below"   # Crosses below (for indicators)
     ]
-    
+
     # Rule roles
     RULE_ROLES = [
         "entry_long",   # Buy signal
@@ -67,10 +67,10 @@ class StrategySchema:
         "entry_short",  # Short signal
         "exit_short"    # Cover signal (close short)
     ]
-    
+
     # Price fields
     PRICE_FIELDS = ["bid", "ask", "mid", "volume"]
-    
+
     # Exit condition types
     EXIT_CONDITION_TYPES = [
         "take_profit_pct",   # Exit at +X% profit
@@ -81,7 +81,7 @@ class StrategySchema:
         "time_of_day",       # Exit at specific hour
         "day_of_week"        # Exit on specific day
     ]
-    
+
     # Timing modes
     TIMING_MODES = ["every_tick", "on_change"]
 
@@ -318,41 +318,137 @@ Remember: Generate clean, parseable JSON that adheres to this exact format. The 
 
 class AIProvider(ABC):
     """Abstract base class for AI providers."""
-    
+
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = model_name
-    
+
+    # ── Abstract: each subclass implements the raw HTTP call ─────────────────
+
     @abstractmethod
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Make API call and return raw text response."""
+        pass
+
+    # ── Public: strategy builder convenience ─────────────────────────────────
+
     def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
         """Convert natural language to strategy JSON."""
-        pass
-    
-    def _parse_response(self, text: str) -> Dict[str, Any]:
-        """Helper to parse and validate JSON response."""
-        # Remove markdown code blocks if present
-        text = re.sub(r'^```(?:json)?\n', '', text)
-        text = re.sub(r'\n```$', '', text)
-        
+        text = self._call_api(
+            user_prompt=f"Create a trading strategy from this description:\n\n{user_prompt}",
+            system_prompt=SYSTEM_PROMPT,
+            temperature=temperature,
+        )
+        return self._parse_response(text)
+
+    # ── JSON extraction (shared with indicator builder) ───────────────────────
+
+    def _extract_json(self, text: str) -> Any:
+        """
+        Robustly extract a JSON object from AI response text.
+
+        Handles:
+        - Markdown code fences (```json ... ``` or ``` ... ```)
+        - Trailing explanation text after the JSON object
+        - Leading explanation text before the JSON object
+        - Literal (unescaped) newlines inside JSON string values
+        - Trailing commas before } or ]
+        """
+        text = text.strip()
+
+        # Strip markdown code fence markers only at boundaries to avoid
+        # mangling backtick content inside string values.
+        # Handle: ```json\n, ```\n at start; \n``` at end.
+        text = re.sub(r'^```(?:json)?\s*\n?', '', text)
+        text = re.sub(r'\n?```\s*$', '', text)
+        text = text.strip()
+
+        # Find the start of the first JSON object
+        start = text.find('{')
+        if start == -1:
+            raise ValueError("No JSON object found in response")
+
+        # First attempt: parse as-is (handles trailing text via raw_decode)
         try:
-            strategy = json.loads(text)
+            obj, _ = json.JSONDecoder().raw_decode(text, idx=start)
+            return obj
+        except json.JSONDecodeError:
+            pass
+
+        # Second attempt: sanitize common AI output issues then retry.
+        sanitized = self._sanitize_json_text(text[start:])
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(sanitized)
+            return obj
         except json.JSONDecodeError as e:
-            raise ValueError(f"Response is not valid JSON: {e}")
-        
-        # Validate structure
+            loc = e.pos
+            snippet = sanitized[max(0, loc - 60): loc + 60]
+            tail = sanitized[-120:]  # last 120 chars — shows whether response is cut off
+            raise ValueError(
+                f"Response is not valid JSON: {e}\n"
+                f"  ...around char {loc}: {snippet!r}\n"
+                f"  Response tail (last 120 chars): {tail!r}"
+            )
+
+    @staticmethod
+    def _sanitize_json_text(text: str) -> str:
+        """
+        Attempt to repair common JSON malformations produced by LLMs:
+        1. Literal (unescaped) newlines inside string values → \\n
+        2. Trailing commas before } or ]
+        """
+        # Fix literal newlines inside strings.
+        # Strategy: walk character by character tracking whether we're inside a
+        # string.  When inside a string, replace bare \n / \r with \\n / \\r.
+        result = []
+        in_string = False
+        escape_next = False
+        for ch in text:
+            if escape_next:
+                result.append(ch)
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                result.append(ch)
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                result.append(ch)
+                continue
+            if in_string and ch == '\n':
+                result.append('\\n')
+                continue
+            if in_string and ch == '\r':
+                result.append('\\r')
+                continue
+            result.append(ch)
+        text = ''.join(result)
+
+        # Fix trailing commas: , followed by optional whitespace then } or ]
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+
+        return text
+
+    # ── Strategy-specific response parsing ───────────────────────────────────
+
+    def _parse_response(self, text: str) -> Dict[str, Any]:
+        """Parse and validate a strategy JSON response."""
+        strategy = self._extract_json(text)
+
         if not isinstance(strategy, dict):
             raise ValueError("Response must be a JSON object")
         if "name" not in strategy or "rules" not in strategy:
             raise ValueError("Strategy must contain 'name' and 'rules' fields")
         if not isinstance(strategy["rules"], list):
             raise ValueError("'rules' must be a list")
-        
+
         return strategy
-    
+
     def validate_strategy(self, strategy: Dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate strategy structure and return warnings."""
         warnings = []
-        
+
         if not isinstance(strategy, dict):
             return False, ["Strategy must be a dictionary"]
         if "name" not in strategy:
@@ -361,7 +457,7 @@ class AIProvider(ABC):
             return False, ["'rules' must be a list"]
         if not strategy["rules"]:
             return False, ["Strategy must have at least one rule"]
-        
+
         role_counts = {}
         for rule in strategy["rules"]:
             if not isinstance(rule, dict):
@@ -373,7 +469,7 @@ class AIProvider(ABC):
             role_counts[role] = role_counts.get(role, 0) + 1
             if not isinstance(rule["conditions"], list) or not rule["conditions"]:
                 return False, [f"Rule '{rule['name']}' must have at least one condition"]
-        
+
         # Warnings for missing exit rules
         if role_counts.get("entry_long") and not role_counts.get("exit_long"):
             warnings.append("⚠️ No exit_long rule - long positions will never close!")
@@ -383,151 +479,211 @@ class AIProvider(ABC):
             warnings.append("⚠️ Exit long exists but no entry_long rule!")
         if role_counts.get("exit_short") and not role_counts.get("entry_short"):
             warnings.append("⚠️ Exit short exists but no entry_short rule!")
-        
+
         return True, warnings
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Anthropic Provider (Claude)
+# Anthropic Provider (Claude) — pure REST, no SDK required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class AnthropicProvider(AIProvider):
-    """Anthropic Claude API provider."""
-    
-    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
-        """Build strategy using Anthropic Claude API."""
+    """Anthropic Claude API provider (REST)."""
+
+    BASE_URL = "https://api.anthropic.com/v1/messages"
+
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Call Anthropic Messages API and return raw text."""
+        import httpx
+
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "temperature": temperature,
+        }
+
         try:
-            import anthropic
-        except ImportError:
-            raise ImportError("anthropic package required. Install: pip install anthropic")
-        
-        try:
-            client = anthropic.Anthropic(api_key=self.api_key)
-            message = client.messages.create(
-                model=self.model_name,
-                max_tokens=2048,
-                temperature=temperature,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"Create a trading strategy from this description:\n\n{user_prompt}"
-                    }
-                ]
-            )
-            response_text = message.content[0].text.strip()
-            return self._parse_response(response_text)
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "x-api-key": self.api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            if data.get("stop_reason") == "max_tokens":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
+            return data["content"][0]["text"].strip()
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Anthropic API error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenAI Provider (GPT-4, etc.)
+# OpenAI Provider — pure REST, no SDK required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class OpenAIProvider(AIProvider):
-    """OpenAI GPT API provider."""
-    
-    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
-        """Build strategy using OpenAI API."""
+    """OpenAI Chat Completions API provider (REST)."""
+
+    BASE_URL = "https://api.openai.com/v1/chat/completions"
+
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Call OpenAI Chat Completions API and return raw text."""
+        import httpx
+
+        # o1/o3/o4 reasoning models don't accept temperature or a system role message
+        is_reasoning = self.model_name.startswith(("o1", "o3", "o4"))
+
+        messages = []
+        if not is_reasoning:
+            messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
+        else:
+            # Embed system instructions in the user turn for reasoning models
+            messages.append({"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"})
+
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_completion_tokens": 4096,
+            "messages": messages,
+        }
+        if not is_reasoning:
+            payload["temperature"] = temperature
+
         try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError("openai package required. Install: pip install openai")
-        
-        try:
-            client = OpenAI(api_key=self.api_key)
-            response = client.chat.completions.create(
-                model=self.model_name,
-                max_tokens=2048,
-                temperature=temperature,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
                     },
-                    {
-                        "role": "user",
-                        "content": f"Create a trading strategy from this description:\n\n{user_prompt}"
-                    }
-                ]
-            )
-            response_text = response.choices[0].message.content.strip()
-            return self._parse_response(response_text)
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            if data["choices"][0].get("finish_reason") == "length":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
+            return data["choices"][0]["message"]["content"].strip()
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"OpenAI API error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Grok Provider (xAI, OpenAI-compatible)
+# Grok Provider (xAI) — OpenAI-compatible REST endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
 class GrokProvider(AIProvider):
-    """xAI Grok API provider (OpenAI-compatible endpoint)."""
-    
-    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
-        """Build strategy using xAI Grok API."""
+    """xAI Grok API provider (OpenAI-compatible REST)."""
+
+    BASE_URL = "https://api.x.ai/v1/chat/completions"
+
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Call xAI Grok API and return raw text."""
+        import httpx
+
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": 4096,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+        }
+
         try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError("openai package required. Install: pip install openai")
-        
-        try:
-            # Grok uses OpenAI-compatible API but with different base URL
-            client = OpenAI(
-                api_key=self.api_key,
-                base_url="https://api.x.ai/v1"
-            )
-            response = client.chat.completions.create(
-                model=self.model_name,
-                max_tokens=2048,
-                temperature=temperature,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
                     },
-                    {
-                        "role": "user",
-                        "content": f"Create a trading strategy from this description:\n\n{user_prompt}"
-                    }
-                ]
-            )
-            response_text = response.choices[0].message.content.strip()
-            return self._parse_response(response_text)
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            if data["choices"][0].get("finish_reason") == "length":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
+            return data["choices"][0]["message"]["content"].strip()
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Grok API error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Google Gemini Provider
+# Google Gemini Provider — pure REST, no SDK required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class GeminiProvider(AIProvider):
-    """Google Gemini API provider."""
-    
-    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
-        """Build strategy using Google Gemini API."""
+    """Google Gemini generateContent API provider (REST)."""
+
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Call Google Gemini generateContent API and return raw text."""
+        import httpx
+
+        url = self.BASE_URL.format(model=self.model_name)
+        payload: Dict[str, Any] = {
+            "systemInstruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": user_prompt}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": 4096,
+            },
+        }
+
         try:
-            import google.generativeai as genai
-        except ImportError:
-            raise ImportError("google-generativeai package required. Install: pip install google-generativeai")
-        
-        try:
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=SYSTEM_PROMPT,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=temperature,
-                    max_output_tokens=2048
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    url,
+                    params={"key": self.api_key},
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
                 )
-            )
-            response = model.generate_content(
-                f"Create a trading strategy from this description:\n\n{user_prompt}"
-            )
-            response_text = response.text.strip()
-            return self._parse_response(response_text)
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            if data["candidates"][0].get("finishReason") == "MAX_TOKENS":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Gemini API error: {e}")
 
@@ -543,60 +699,51 @@ def get_ai_provider(
 ) -> AIProvider:
     """
     Get an AI provider instance.
-    
+
     Reads from database if no arguments provided.
-    
+
     Args:
         provider: "anthropic", "openai", "grok", or "gemini"
         api_key: API key for the provider
         model_name: Model name to use
-    
+
     Returns:
         Configured AIProvider instance
     """
     # If not provided, read from database
     if provider is None or api_key is None:
-        from db import get_db_conn, decrypt_with_password
-        
-        conn = get_db_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT service, model_name, model_key, protected FROM api_keys LIMIT 1")
-        row = cur.fetchone()
-        conn.close()
-        
-        if not row:
+        import base64
+        from db import get_active_model_key, _infer_provider
+
+        key_rec = get_active_model_key()
+        if not key_rec:
             raise ValueError(
                 "No AI provider configured in database. "
                 "Use the Key Manager frontend to set up an LLM provider."
             )
-        
-        provider = provider or row["service"]
-        model_name = model_name or row["model_name"]
-        
-        # Decrypt API key if needed
-        enc_key = row["model_key"]
-        is_protected = bool(row["protected"])
-        
+
+        model_name   = model_name or key_rec["model_name"]
+        provider     = provider or key_rec.get("provider") or _infer_provider(model_name)
+        enc_key      = key_rec["key_data"] or ""
+        is_protected = bool(key_rec["protected"])
+
         if is_protected:
-            # For protected keys, we need the password - this should be provided by frontend
-            # For now, return an error directing user to decrypt
             raise ValueError(
                 "LLM API key is encrypted. "
-                "Please provide decryption in the Key Manager."
+                "Please provide the password via the AI chat interface."
             )
         else:
-            import base64
             try:
-                api_key = base64.b64decode(enc_key).decode()
+                api_key = base64.b64decode(enc_key).decode().strip()
             except Exception:
-                api_key = enc_key  # Fallback if not base64 encoded
-    
+                api_key = enc_key.strip()
+
     # Validate inputs
     if not provider or not api_key or not model_name:
         raise ValueError("provider, api_key, and model_name are required")
-    
+
     provider = provider.lower().strip()
-    
+
     # Provider mapping
     PROVIDERS = {
         "anthropic": AnthropicProvider,
@@ -604,14 +751,14 @@ def get_ai_provider(
         "grok": GrokProvider,
         "gemini": GeminiProvider,
     }
-    
+
     ProviderClass = PROVIDERS.get(provider)
     if not ProviderClass:
         raise ValueError(
             f"Unknown provider: {provider}. "
             f"Supported: {', '.join(PROVIDERS.keys())}"
         )
-    
+
     return ProviderClass(api_key=api_key, model_name=model_name)
 
 
@@ -622,15 +769,14 @@ def get_ai_provider(
 def build_strategy_from_prompt(user_prompt: str) -> Dict[str, Any]:
     """
     Build a strategy from a prompt using configured provider.
-    
+
     Reads provider config from database.
-    
+
     Args:
         user_prompt: Natural language strategy description
-    
+
     Returns:
         Strategy JSON dictionary
     """
     provider = get_ai_provider()
     return provider.build_from_prompt(user_prompt)
-

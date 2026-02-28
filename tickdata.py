@@ -8,6 +8,7 @@ class TickData:
     ask: float = 0.0
     volume: float = 0.0
     time: datetime = field(default_factory=datetime.now)
+    open: float = 0.0   # bar open price; used for next-bar-open fill execution
 
     def __repr__(self) -> str:
         return (

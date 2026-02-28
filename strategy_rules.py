@@ -57,6 +57,11 @@ class Operand(ABC):
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]: ...
 
+    @property
+    def min_bars(self) -> int:
+        """Minimum bars of history required before this operand returns a valid value."""
+        return 1
+
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Operand":
         t = d["type"]
@@ -132,6 +137,10 @@ class LookbackOperand(Operand):
     field: PriceField = PriceField.MID
     period: int = 1
 
+    @property
+    def min_bars(self) -> int:
+        return self.period + 1
+
     def value(self, series: "PriceSeries") -> float:
         return series.ago(self.field, self.period)
 
@@ -151,6 +160,10 @@ class SMAOperand(Operand):
     _type_tag = "sma"
     field: PriceField = PriceField.MID
     period: int = 20
+
+    @property
+    def min_bars(self) -> int:
+        return self.period
 
     def value(self, series: "PriceSeries") -> float:
         buf = series.buffer(self.field, self.period)
@@ -175,6 +188,10 @@ class EMAOperand(Operand):
     field: PriceField = PriceField.MID
     period: int = 20
 
+    @property
+    def min_bars(self) -> int:
+        return self.period * 2  # extra runway to stabilise EMA
+
     def value(self, series: "PriceSeries") -> float:
         return series.ema(self.field, self.period)
 
@@ -194,6 +211,10 @@ class RSIOperand(Operand):
     _type_tag = "rsi"
     field: PriceField = PriceField.MID
     period: int = 14
+
+    @property
+    def min_bars(self) -> int:
+        return self.period + 1
 
     def value(self, series: "PriceSeries") -> float:
         return series.rsi(self.field, self.period)
@@ -224,6 +245,10 @@ class BollingerOperand(Operand):
     period: int = 20
     std_dev: float = 2.0
     component: BollingerComponent = BollingerComponent.UPPER
+
+    @property
+    def min_bars(self) -> int:
+        return self.period
 
     def value(self, series: "PriceSeries") -> float:
         return series.bollinger(self.field, self.period, self.std_dev, self.component)
@@ -258,6 +283,10 @@ class MACDOperand(Operand):
     slow: int = 26
     signal: int = 9
     component: MACDComponent = MACDComponent.MACD
+
+    @property
+    def min_bars(self) -> int:
+        return self.slow + self.signal
 
     def value(self, series: "PriceSeries") -> float:
         return series.macd(self.fast, self.slow, self.signal, self.component)
@@ -356,13 +385,14 @@ class ExitCondition:
     value: float
     combiner: str = "and"
 
-    def evaluate_portfolio(self, portfolio: Any, tick: Any, bars_in_trade: int) -> bool:
+    def evaluate_portfolio(self, portfolio: Any, tick: Any, bars_in_trade: int,
+                           entry_equity: float = None) -> bool:
         t = self.exit_type
         if t == "take_profit_pct":
-            pnl_pct = _portfolio_pnl_pct(portfolio)
+            pnl_pct = _portfolio_pnl_pct(portfolio, entry_equity)
             return pnl_pct is not None and pnl_pct >= self.value
         if t == "stop_loss_pct":
-            pnl_pct = _portfolio_pnl_pct(portfolio)
+            pnl_pct = _portfolio_pnl_pct(portfolio, entry_equity)
             return pnl_pct is not None and pnl_pct <= -self.value
         if t == "take_profit_abs":
             pnl = portfolio.total_value() - portfolio.starting_cash
@@ -375,7 +405,8 @@ class ExitCondition:
         if t == "time_of_day":
             return tick.time.hour == int(self.value)
         if t == "day_of_week":
-            return tick.time.weekday() == int(self.value) % 7
+            # value uses ISO weekday convention: 1=Monday … 5=Friday … 7=Sunday
+            return tick.time.isoweekday() == int(self.value)
         return False
 
     @staticmethod
@@ -387,8 +418,15 @@ class ExitCondition:
         )
 
 
-def _portfolio_pnl_pct(portfolio: Any) -> Optional[float]:
-    start = portfolio.starting_cash
+def _portfolio_pnl_pct(portfolio: Any, entry_equity: float = None) -> Optional[float]:
+    """
+    Return P&L as a percentage.
+    When entry_equity is provided (portfolio total_value captured at trade entry)
+    the return is relative to that entry baseline — accurate for TP/SL checks.
+    Falls back to the all-time starting_cash baseline when entry_equity is None.
+    """
+    start = entry_equity if (entry_equity is not None and entry_equity > 0) \
+            else portfolio.starting_cash
     if start == 0:
         return None
     current = portfolio.total_value()
@@ -432,7 +470,18 @@ class Rule:
     _prev_result:    bool = field(default=False, init=False, repr=False, compare=False)
     _bars_in_trade:  int  = field(default=0,     init=False, repr=False, compare=False)
 
-    def evaluate(self, series: "PriceSeries", portfolio: Any = None, tick: Any = None) -> bool:
+    def evaluate(self, series: "PriceSeries", portfolio: Any = None, tick: Any = None,
+                 entry_equity: float = None) -> bool:
+        # ── position guard for exit rules ──────────────────────────────────
+        # Return False *without* updating _prev_result so the exit fires fresh
+        # on the first bar where a position is actually held.
+        if portfolio is not None and tick is not None:
+            pos = portfolio.positions.get(tick.name, 0.0)
+            if self.role == RuleRole.EXIT_LONG and pos <= 1e-9:
+                return False
+            if self.role == RuleRole.EXIT_SHORT and pos >= -1e-9:
+                return False
+
         # ── signal conditions ──────────────────────────────────────────────
         if self.conditions:
             result = self.conditions[0].evaluate(series)
@@ -447,9 +496,10 @@ class Rule:
 
         # ── exit conditions (portfolio-based) ──────────────────────────────
         if self.exit_conditions and portfolio is not None and tick is not None:
-            exit_result = self.exit_conditions[0].evaluate_portfolio(portfolio, tick, self._bars_in_trade)
+            exit_result = self.exit_conditions[0].evaluate_portfolio(
+                portfolio, tick, self._bars_in_trade, entry_equity)
             for ec in self.exit_conditions[1:]:
-                val = ec.evaluate_portfolio(portfolio, tick, self._bars_in_trade)
+                val = ec.evaluate_portfolio(portfolio, tick, self._bars_in_trade, entry_equity)
                 if ec.combiner == "or":
                     exit_result = exit_result or val
                 else:
@@ -754,16 +804,48 @@ class RuleSetStrategy(Strategy):
     def __init__(self, rule_set: RuleSet) -> None:
         self.rule_set = rule_set
         self._series: Dict[str, PriceSeries] = {}
+        self._bar_count: int = 0
+        # portfolio.total_value() captured at trade entry, per symbol.
+        # Used to compute TP/SL % relative to the entry baseline, not starting_cash.
+        self._entry_equity: Dict[str, float] = {}
+
+    @property
+    def warmup_bars(self) -> int:
+        """
+        Minimum bars needed before any indicator in this strategy is reliable.
+        During warmup no signals are generated (lookahead-bias prevention).
+        """
+        max_bars = 1
+        for rule in self.rule_set.rules:
+            for cond in rule.conditions:
+                for operand in (cond.left, cond.right):
+                    max_bars = max(max_bars, operand.min_bars)
+        return max_bars
 
     def on_tick(self, tick: TickData) -> List[SignalEvent]:
         series = self._series.setdefault(tick.name, PriceSeries())
         series.push(tick)
+        self._bar_count += 1
+
+        # Suppress all signals during the warmup period
+        if self._bar_count <= self.warmup_bars:
+            return []
+
+        # Maintain entry equity snapshot for accurate TP/SL % calculation.
+        # Captured on the first bar where a position exists (after fill).
+        portfolio = getattr(self, "_portfolio", None)
+        if portfolio is not None:
+            pos = portfolio.positions.get(tick.name, 0.0)
+            if abs(pos) > 1e-9:
+                if tick.name not in self._entry_equity:
+                    self._entry_equity[tick.name] = portfolio.total_value()
+            else:
+                self._entry_equity.pop(tick.name, None)
 
         signals: List[SignalEvent] = []
         for rule in self.rule_set.rules:
-            # Pass tick + portfolio context if available (engine sets _portfolio)
-            portfolio = getattr(self, "_portfolio", None)
-            if rule.evaluate(series, portfolio=portfolio, tick=tick):
+            entry_eq = self._entry_equity.get(tick.name)
+            if rule.evaluate(series, portfolio=portfolio, tick=tick, entry_equity=entry_eq):
                 action = self._ROLE_TO_ACTION.get(rule.role)
                 if action:
                     signals.append(SignalEvent(

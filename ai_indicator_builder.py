@@ -219,58 +219,47 @@ The JSON structure must include:
 def build_indicator_from_prompt(user_prompt: str, provider=None) -> Dict[str, Any]:
     """
     Build an indicator expression from natural language using configured AI provider.
-    
+
     Args:
         user_prompt: Natural language indicator description
         provider: Optional pre-configured provider. If None, reads from database.
-    
+
     Returns:
         Dictionary with name, description, expr, and color
     """
     if provider is None:
         from ai_strategy_builder import get_ai_provider
         provider = get_ai_provider()
-    
+
     try:
-        # Generate the indicator expression using the AI provider
-        response_json = provider.build_from_prompt(
-            user_prompt=f"""
-You are an expert at converting natural language indicator descriptions into JSON expression trees.
-Technical context: {user_prompt}
-
-Return ONLY the JSON structure for this indicator, nothing else. No markdown, no explanations.
-
-The JSON must have these fields:
-- name: indicator name
-- description: what it does
-- expr: the expression tree following the rules above
-- color: hex color like "#3b82f6"
-""",
-            temperature=0.5  # Lower temperature for consistent indicator generation
+        # Call the API with the indicator-specific system prompt.
+        # Uses _call_api directly so we get raw text without strategy validation.
+        raw_text = provider._call_api(
+            user_prompt=f"Create an indicator from this description:\n\n{user_prompt}",
+            system_prompt=INDICATOR_SYSTEM_PROMPT,
+            temperature=0.5,
         )
-        
-        # Check if it returned a strategy instead of an indicator
-        # If it has 'rules' field, it's a strategy - extract just the expression
+
+        # Extract JSON (handles markdown fences and trailing text)
+        response_json = provider._extract_json(raw_text)
+
+        # Check if AI accidentally returned a strategy format instead
         if "rules" in response_json:
             raise ValueError("AI generated a strategy instead of an indicator. Try a simpler description.")
-        
-        # Validate indicator structure
-        required_fields = ["name", "expr"]
-        for field in required_fields:
+
+        # Validate required indicator fields
+        for field in ("name", "expr"):
             if field not in response_json:
                 raise ValueError(f"Generated indicator missing required field: {field}")
-        
-        if "description" not in response_json:
-            response_json["description"] = ""
-        
-        if "color" not in response_json:
-            response_json["color"] = "#3b82f6"  # Default blue
-        
+
+        response_json.setdefault("description", "")
+        response_json.setdefault("color", "#3b82f6")
+
         # Validate expression tree structure
         _validate_expression_node(response_json["expr"])
-        
+
         return response_json
-    
+
     except ValueError:
         raise
     except Exception as e:

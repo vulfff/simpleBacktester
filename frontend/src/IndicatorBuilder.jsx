@@ -63,6 +63,8 @@ const BLOCKS = [
       { type: "binop", op: "/",    label: "Divide  (A ÷ B)",    desc: "One value divided by another", emoji: "➗" },
       { type: "unop",  op: "abs",  label: "Absolute Value",     desc: "Removes the minus sign — turns -5 into 5", emoji: "📐" },
       { type: "unop",  op: "sqrt", label: "Square Root",        desc: "√ of a value", emoji: "√" },
+      { type: "ifelse", cond_op: ">", label: "If / Else",       desc: "Return one value when a condition is true, another when false", emoji: "🔀" },
+      { type: "clamp",              label: "Clamp (min/max)",   desc: "Keep a value within a minimum and maximum bound", emoji: "📌" },
     ]
   },
 ];
@@ -73,8 +75,20 @@ const uid = () => String(_nodeId++);
 
 function makeNode(template) {
   const n = { _id: uid(), ...JSON.parse(JSON.stringify(template)) };
-  if (n.type === 'binop') { n.left = makeNode({ type: 'const', value: 0 }); n.right = makeNode({ type: 'const', value: 0 }); }
-  if (n.type === 'unop')  { n.child = makeNode({ type: 'const', value: 0 }); }
+  if (n.type === 'binop')  { n.left = makeNode({ type: 'const', value: 0 }); n.right = makeNode({ type: 'const', value: 0 }); }
+  if (n.type === 'unop')   { n.child = makeNode({ type: 'const', value: 0 }); }
+  if (n.type === 'ifelse') {
+    n.cond_left  = makeNode({ type: 'const', value: 0 });
+    n.cond_op    = n.cond_op || '>';
+    n.cond_right = makeNode({ type: 'const', value: 0 });
+    n.then  = makeNode({ type: 'const', value: 1 });
+    n.else_ = makeNode({ type: 'const', value: 0 });
+  }
+  if (n.type === 'clamp') {
+    n.value = makeNode({ type: 'const', value: 0 });
+    n.lo    = makeNode({ type: 'const', value: 0 });
+    n.hi    = makeNode({ type: 'const', value: 100 });
+  }
   return n;
 }
 
@@ -85,8 +99,10 @@ function serialiseNode(n) {
     const { _id, type, ...rest } = n;
     return { node: 'operand', operand: { type: n.opType, ...rest, opType: undefined } };
   }
-  if (n.type === 'binop') return { node: 'binop', op: n.op, left: serialiseNode(n.left), right: serialiseNode(n.right) };
-  if (n.type === 'unop')  return { node: 'unop',  op: n.op, operand: serialiseNode(n.child) };
+  if (n.type === 'binop')  return { node: 'binop', op: n.op, left: serialiseNode(n.left), right: serialiseNode(n.right) };
+  if (n.type === 'unop')   return { node: 'unop',  op: n.op, operand: serialiseNode(n.child) };
+  if (n.type === 'ifelse') return { node: 'ifelse', cond_left: serialiseNode(n.cond_left), cond_op: n.cond_op || '>', cond_right: serialiseNode(n.cond_right), then: serialiseNode(n.then), else_: serialiseNode(n.else_) };
+  if (n.type === 'clamp')  return { node: 'clamp', value: serialiseNode(n.value), lo: serialiseNode(n.lo), hi: serialiseNode(n.hi) };
   return { node: 'const', value: 0 };
 }
 
@@ -94,8 +110,10 @@ function inflateNode(raw) {
   if (!raw) return makeNode({ type: 'const', value: 0 });
   if (raw.node === 'const')   return { _id: uid(), type: 'const', value: raw.value ?? 0 };
   if (raw.node === 'operand') { const { type, ...rest } = raw.operand ?? {}; return { _id: uid(), type: 'operand', opType: type, ...rest }; }
-  if (raw.node === 'binop')   return { _id: uid(), type: 'binop', op: raw.op, left: inflateNode(raw.left), right: inflateNode(raw.right) };
-  if (raw.node === 'unop')    return { _id: uid(), type: 'unop',  op: raw.op, child: inflateNode(raw.operand) };
+  if (raw.node === 'binop')   return { _id: uid(), type: 'binop',  op: raw.op, left: inflateNode(raw.left), right: inflateNode(raw.right) };
+  if (raw.node === 'unop')    return { _id: uid(), type: 'unop',   op: raw.op, child: inflateNode(raw.operand) };
+  if (raw.node === 'ifelse')  return { _id: uid(), type: 'ifelse', cond_op: raw.cond_op || '>', cond_left: inflateNode(raw.cond_left), cond_right: inflateNode(raw.cond_right), then: inflateNode(raw.then), else_: inflateNode(raw.else_) };
+  if (raw.node === 'clamp')   return { _id: uid(), type: 'clamp',  value: inflateNode(raw.value), lo: inflateNode(raw.lo), hi: inflateNode(raw.hi) };
   return makeNode({ type: 'const', value: 0 });
 }
 
@@ -109,6 +127,8 @@ function describeNode(n) {
   }
   if (n.type === 'binop')   return `(${describeNode(n.left)} ${n.op} ${describeNode(n.right)})`;
   if (n.type === 'unop')    return `${n.op}(${describeNode(n.child)})`;
+  if (n.type === 'ifelse')  return `if(${describeNode(n.cond_left)} ${n.cond_op} ${describeNode(n.cond_right)}) ? ${describeNode(n.then)} : ${describeNode(n.else_)}`;
+  if (n.type === 'clamp')   return `clamp(${describeNode(n.value)}, ${describeNode(n.lo)}, ${describeNode(n.hi)})`;
   return '?';
 }
 
@@ -177,6 +197,35 @@ function BlockParams({ node, onChange }) {
       {node.type === 'unop' && <>
         <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Input:</span>
         <NodeMiniPicker node={node.child} onSet={v => onChange({ ...node, child: v })} />
+      </>}
+      {node.type === 'ifelse' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', color: '#9ca3af', minWidth: 30 }}>If</span>
+            <NodeMiniPicker node={node.cond_left}  onSet={v => onChange({ ...node, cond_left: v })} />
+            <select value={node.cond_op || '>'} style={selectStyle}
+              onChange={e => onChange({ ...node, cond_op: e.target.value })}>
+              {['>','<','>=','<=','==','!='].map(op => <option key={op} value={op}>{op}</option>)}
+            </select>
+            <NodeMiniPicker node={node.cond_right} onSet={v => onChange({ ...node, cond_right: v })} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.78rem', color: '#34d399', minWidth: 30 }}>Then</span>
+            <NodeMiniPicker node={node.then}  onSet={v => onChange({ ...node, then: v })} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.78rem', color: '#f87171', minWidth: 30 }}>Else</span>
+            <NodeMiniPicker node={node.else_} onSet={v => onChange({ ...node, else_: v })} />
+          </div>
+        </div>
+      )}
+      {node.type === 'clamp' && <>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Value</span>
+        <NodeMiniPicker node={node.value} onSet={v => onChange({ ...node, value: v })} />
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Min</span>
+        <NodeMiniPicker node={node.lo}    onSet={v => onChange({ ...node, lo: v })} />
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Max</span>
+        <NodeMiniPicker node={node.hi}    onSet={v => onChange({ ...node, hi: v })} />
       </>}
     </div>
   );
@@ -323,13 +372,18 @@ export default function IndicatorBuilder() {
     fetch(`${API_BASE}/db/indicators`)
       .then(r => r.json())
       .then(d => {
-        const loaded = (d.indicators || []).map(ind => ({
-          _id: String(_indId++),
-          name: ind.name,
-          description: ind.description || '',
-          color: ind.color || '#22d3ee',
-          blocks: ind.expr ? [inflateNode(ind.expr)] : [],
-        }));
+        const loaded = (d.indicators || []).map(ind => {
+          // ind.expr is the wrapper: {expr: {...tree...}, description: "...", color: "..."}
+          const wrapper = ind.expr || {};
+          const actualExpr = wrapper.expr || null;
+          return {
+            _id: String(_indId++),
+            name: ind.name,
+            description: wrapper.description || '',
+            color: wrapper.color || '#22d3ee',
+            blocks: actualExpr ? [inflateNode(actualExpr)] : [],
+          };
+        });
         setIndicators(loaded);
         if (loaded.length) setActiveId(loaded[0]._id);
       })
@@ -406,35 +460,11 @@ export default function IndicatorBuilder() {
       <p>Drag building blocks onto your indicator canvas. Each indicator is a reusable signal you can reference in your strategies.</p>
 
       {/* Mode selector */}
-      <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0 1rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
-        <button
-          onClick={() => setMode('build')}
-          style={{
-            padding: '8px 16px',
-            background: mode === 'build' ? '#3b82f6' : '#1e293b',
-            border: 'none',
-            borderRadius: 6,
-            color: mode === 'build' ? '#ffffff' : '#9ca3af',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: mode === 'build' ? 600 : 400
-          }}
-        >
+      <div className="tab-strip" style={{ margin: '1.5rem 0 1rem', width: 'fit-content' }}>
+        <button className={`tab-btn${mode === 'build' ? ' active' : ''}`} onClick={() => setMode('build')}>
           ◆ Manual Builder
         </button>
-        <button
-          onClick={() => setMode('ai-indicator')}
-          style={{
-            padding: '8px 16px',
-            background: mode === 'ai-indicator' ? '#3b82f6' : '#1e293b',
-            border: 'none',
-            borderRadius: 6,
-            color: mode === 'ai-indicator' ? '#ffffff' : '#9ca3af',
-            cursor: 'pointer',
-            fontSize: '0.9rem',
-            fontWeight: mode === 'ai-indicator' ? 600 : 400
-          }}
-        >
+        <button className={`tab-btn${mode === 'ai-indicator' ? ' active' : ''}`} onClick={() => setMode('ai-indicator')}>
           🤖 AI Indicator
         </button>
       </div>
@@ -452,12 +482,12 @@ export default function IndicatorBuilder() {
           </button>
         ))}
         {indicators.length > 0 && (
-          <button style={{ ...pillStyle, background: saving ? '#1e293b' : 'linear-gradient(135deg,#22d3ee,#34d399)', color: '#0f172a', fontWeight: 700, border: 'none', marginLeft: 'auto' }}
-            onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save All'}</button>
+          <button className="btn btn-primary btn-pill" style={{ marginLeft: 'auto' }}
+            onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save All'}</button>
         )}
       </div>
 
-      {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', color: '#fca5a5', marginBottom: 14, fontSize: '0.87rem' }}>{error}</div>}
+      {error && <div className="alert alert-error" style={{ marginBottom: 14 }}>{error}</div>}
 
       {/* AI Indicator Mode */}
       {mode === 'ai-indicator' && (
