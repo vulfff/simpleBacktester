@@ -153,8 +153,8 @@ export default function Backtest({ goTo }) {
       if (arr.length) setSelId(arr[0].id)
     }).catch(()=>{})
 
-    fetch(`${API}/db/api_keys`).then(r=>r.json())
-      .then(d => setHasKey(!!(d.api_key?.data_key)))
+    fetch(`${API}/db/data-keys`).then(r=>r.json())
+      .then(d => setHasKey(!!(d.keys?.some(k => k.active))))
       .catch(()=> setHasKey(false))
   }, [])
 

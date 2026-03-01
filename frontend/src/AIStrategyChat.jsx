@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+const WELCOME_BASE = 'Hi! Describe your trading strategy in plain English and I\'ll convert it to rules. For example: "Buy when a 20-day EMA crosses above a 50-day EMA. Sell when RSI exceeds 70."';
+
 export function AIStrategyChat({ onStrategyGenerated }) {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! Describe your trading strategy in plain English, and I\'ll convert it to a rule-based strategy. For example: "Buy when a 20-day EMA crosses above a 50-day EMA. Sell when RSI exceeds 70."' }
-  ]);
+  const [messages, setMessages] = useState([{ role: 'assistant', content: WELCOME_BASE }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
@@ -13,11 +13,29 @@ export function AIStrategyChat({ onStrategyGenerated }) {
   const [modelName, setModelName] = useState(undefined); // undefined = loading, null = none, string = configured
   const messagesEndRef = useRef(null);
 
+  // Fix: correct endpoint for model keys
   useEffect(() => {
-    fetch(`${API_BASE}/db/api_keys`)
+    fetch(`${API_BASE}/db/model-keys`)
       .then(r => r.json())
-      .then(d => setModelName(d.api_key?.model_name || null))
+      .then(d => {
+        const active = (d.keys || []).find(k => k.active);
+        setModelName(active?.model_name || null);
+      })
       .catch(() => setModelName(null));
+  }, []);
+
+  // Load custom indicators and append a hint to the welcome message
+  useEffect(() => {
+    fetch(`${API_BASE}/db/indicators`)
+      .then(r => r.json())
+      .then(d => {
+        const userInds = (d.indicators || []).filter(i => !i.is_builtin);
+        if (userInds.length === 0) return;
+        const names = userInds.map(i => `"${i.name}"`).join(', ');
+        const hint = `\n\nYou have ${userInds.length} custom indicator${userInds.length > 1 ? 's' : ''}: ${names}. Reference them by name in your prompt. To use non-default parameter values, mention them explicitly — e.g. "use RSI Oversold with period 10 and threshold 25".`;
+        setMessages(prev => [{ ...prev[0], content: WELCOME_BASE + hint }, ...prev.slice(1)]);
+      })
+      .catch(() => {});
   }, []);
 
   const scrollToBottom = () => {

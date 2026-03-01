@@ -57,21 +57,37 @@ from typing import Any, Dict, List, Optional
 # Expression tree evaluator
 # ---------------------------------------------------------------------------
 
-def _eval_node(node: Dict[str, Any], series) -> float:
+def _pfx(path: str, key: str) -> str:
+    """Extend a dot-separated path key."""
+    return f"{path}.{key}" if path else key
+
+
+def _eval_node(node: Dict[str, Any], series, overrides: Optional[Dict[str, float]] = None, path: str = "") -> float:
     """Recursively evaluate an expression tree node against a PriceSeries."""
     kind = node.get("node")
+    ov = overrides or {}
 
     if kind == "const":
-        return float(node["value"])
+        k = path or "value"
+        return float(ov.get(k, node["value"]))
 
     if kind == "operand":
         # Lazy import to avoid circular dependency
         from strategy_rules import Operand
-        return Operand.from_dict(node["operand"]).value(series)
+        op = dict(node["operand"])  # shallow copy so we don't mutate the stored tree
+        op_type = op.get("type", "")
+        for param in ("period", "fast", "slow", "signal"):
+            k = _pfx(path, f"operand.{param}")
+            if k in ov:
+                op[param] = max(1, int(round(ov[k])))
+        k_std = _pfx(path, "operand.std_dev")
+        if k_std in ov:
+            op["std_dev"] = max(0.01, float(ov[k_std]))
+        return Operand.from_dict(op).value(series)
 
     if kind == "binop":
-        left  = _eval_node(node["left"],  series)
-        right = _eval_node(node["right"], series)
+        left  = _eval_node(node["left"],  series, ov, _pfx(path, "left"))
+        right = _eval_node(node["right"], series, ov, _pfx(path, "right"))
         if math.isnan(left) or math.isnan(right):
             return math.nan
         op = node["op"]
@@ -84,7 +100,7 @@ def _eval_node(node: Dict[str, Any], series) -> float:
         return math.nan
 
     if kind == "unop":
-        v  = _eval_node(node["operand"], series)
+        v = _eval_node(node["operand"], series, ov, _pfx(path, "operand"))
         if math.isnan(v):
             return math.nan
         op = node["op"]
@@ -95,16 +111,16 @@ def _eval_node(node: Dict[str, Any], series) -> float:
         return math.nan
 
     if kind == "clamp":
-        v  = _eval_node(node["value"], series)
-        lo = _eval_node(node["lo"],    series)
-        hi = _eval_node(node["hi"],    series)
+        v  = _eval_node(node["value"], series, ov, _pfx(path, "value"))
+        lo = _eval_node(node["lo"],    series, ov, _pfx(path, "lo"))
+        hi = _eval_node(node["hi"],    series, ov, _pfx(path, "hi"))
         if any(math.isnan(x) for x in (v, lo, hi)):
             return math.nan
         return max(lo, min(hi, v))
 
     if kind == "ifelse":
-        cl = _eval_node(node["cond_left"],  series)
-        cr = _eval_node(node["cond_right"], series)
+        cl = _eval_node(node["cond_left"],  series, ov, _pfx(path, "cond_left"))
+        cr = _eval_node(node["cond_right"], series, ov, _pfx(path, "cond_right"))
         if math.isnan(cl) or math.isnan(cr):
             return math.nan
         cond_op = node["cond_op"]
@@ -116,9 +132,89 @@ def _eval_node(node: Dict[str, Any], series) -> float:
             math.isclose(cl, cr) if cond_op == "==" else
             not math.isclose(cl, cr)
         )
-        return _eval_node(node["then"] if result else node["else_"], series)
+        branch = "then" if result else "else_"
+        return _eval_node(node[branch], series, ov, _pfx(path, branch))
 
     return math.nan
+
+
+# ---------------------------------------------------------------------------
+# extract_editable_params  (returns a flat list of tweakable fields)
+# ---------------------------------------------------------------------------
+
+_PATH_LABELS: Dict[str, str] = {
+    "cond_right": "Threshold",
+    "cond_left":  "Left value",
+    "then":       "True value",
+    "else_":      "False value",
+    "lo":         "Min",
+    "hi":         "Max",
+    "value":      "Value",
+    "left":       "Left operand",
+    "right":      "Right operand",
+}
+
+_OPERAND_NUMERIC_PARAMS = ("period", "fast", "slow", "signal", "std_dev")
+
+
+def _label_from_path(path: str) -> str:
+    if not path:
+        return "Value"
+    last = path.split(".")[-1]
+    return _PATH_LABELS.get(last, last.replace("_", " ").title())
+
+
+def extract_editable_params(expr: Dict[str, Any], path: str = "") -> List[Dict[str, Any]]:
+    """
+    Walk an expression tree and return a flat list of editable numeric fields:
+      [{path, label, default_value, param_type}]
+    'path' uniquely identifies each field for use as an override key.
+    """
+    kind = expr.get("node")
+    results: List[Dict[str, Any]] = []
+
+    if kind == "const":
+        k = path or "value"
+        results.append({
+            "path":          k,
+            "label":         _label_from_path(path),
+            "default_value": float(expr["value"]),
+            "param_type":    "float",
+        })
+
+    elif kind == "operand":
+        op = expr.get("operand", {})
+        op_type = op.get("type", "operand").upper()
+        for param in _OPERAND_NUMERIC_PARAMS:
+            if param in op:
+                k = _pfx(path, f"operand.{param}")
+                label = f"{op_type} {param.replace('_', ' ')}"
+                results.append({
+                    "path":          k,
+                    "label":         label,
+                    "default_value": float(op[param]),
+                    "param_type":    "float" if param == "std_dev" else "int",
+                })
+
+    elif kind == "binop":
+        results.extend(extract_editable_params(expr["left"],  _pfx(path, "left")))
+        results.extend(extract_editable_params(expr["right"], _pfx(path, "right")))
+
+    elif kind == "unop":
+        results.extend(extract_editable_params(expr["operand"], _pfx(path, "operand")))
+
+    elif kind == "clamp":
+        results.extend(extract_editable_params(expr["value"], _pfx(path, "value")))
+        results.extend(extract_editable_params(expr["lo"],    _pfx(path, "lo")))
+        results.extend(extract_editable_params(expr["hi"],    _pfx(path, "hi")))
+
+    elif kind == "ifelse":
+        results.extend(extract_editable_params(expr["cond_left"],  _pfx(path, "cond_left")))
+        results.extend(extract_editable_params(expr["cond_right"], _pfx(path, "cond_right")))
+        results.extend(extract_editable_params(expr["then"],       _pfx(path, "then")))
+        results.extend(extract_editable_params(expr["else_"],      _pfx(path, "else_")))
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +228,12 @@ class IndicatorDef:
     description: str = ""
     color:       str = "#22d3ee"         # display colour hint for the UI
 
-    def evaluate(self, series) -> float:
-        return _eval_node(self.expr, series)
+    def evaluate(self, series, overrides: Optional[Dict[str, float]] = None) -> float:
+        return _eval_node(self.expr, series, overrides or {}, "")
+
+    @property
+    def editable_params(self) -> List[Dict[str, Any]]:
+        return extract_editable_params(self.expr)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -204,19 +304,23 @@ def _register_custom_operand() -> None:
     class CustomIndicatorOperand(Operand):
         _type_tag = "custom"
         name: str = ""
+        overrides: Dict[str, float] = field(default_factory=dict)
 
         def value(self, series) -> float:
             defn = INDICATOR_REGISTRY.get(self.name)
             if defn is None:
                 return math.nan
-            return defn.evaluate(series)
+            return defn.evaluate(series, overrides=self.overrides)
 
         def to_dict(self) -> Dict[str, Any]:
-            return {"type": "custom", "name": self.name}
+            d: Dict[str, Any] = {"type": "custom", "name": self.name}
+            if self.overrides:
+                d["overrides"] = self.overrides
+            return d
 
         @classmethod
         def _from_dict(cls, d: Dict[str, Any]) -> "CustomIndicatorOperand":
-            return cls(name=d["name"])
+            return cls(name=d["name"], overrides=d.get("overrides", {}))
 
     _OPERAND_REGISTRY["custom"] = CustomIndicatorOperand
 

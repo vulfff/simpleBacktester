@@ -13,7 +13,10 @@ const BLOCKS = [
       { type: "operand", opType: "price", field: "mid",    label: "Current Price (mid)",    desc: "The average of bid and ask — the 'real' price", emoji: "💰" },
       { type: "operand", opType: "price", field: "bid",    label: "Bid Price",              desc: "What buyers are willing to pay", emoji: "📉" },
       { type: "operand", opType: "price", field: "ask",    label: "Ask Price",              desc: "What sellers want to receive", emoji: "📈" },
+      { type: "operand", opType: "price", field: "high",   label: "Bar High",               desc: "The highest price reached in the bar", emoji: "⬆️" },
+      { type: "operand", opType: "price", field: "low",    label: "Bar Low",                desc: "The lowest price reached in the bar", emoji: "⬇️" },
       { type: "operand", opType: "price", field: "volume", label: "Volume",                 desc: "How many units were traded", emoji: "📊" },
+      { type: "operand", opType: "typical_price",          label: "Typical Price (H+L+C)/3", desc: "Average of high, low and close — a common price basis for CCI and other indicators", emoji: "🎯" },
     ]
   },
   {
@@ -42,6 +45,15 @@ const BLOCKS = [
     ]
   },
   {
+    category: "Range & High/Low",
+    color: "#fb923c",
+    items: [
+      { type: "operand", opType: "highest_high", field: "high", period: 14, label: "Highest High (N bars)", desc: "The highest bar-high over the last N bars — used in Donchian channels, Williams %R, Stochastics", emoji: "🔝" },
+      { type: "operand", opType: "lowest_low",   field: "low",  period: 14, label: "Lowest Low (N bars)",   desc: "The lowest bar-low over the last N bars — used in Donchian channels, Williams %R, Stochastics", emoji: "🔻" },
+      { type: "operand", opType: "atr", period: 14,             label: "ATR (Avg True Range)",  desc: "Volatility measure: average of max(H-L, |H-prev_close|, |L-prev_close|) over N bars", emoji: "📏" },
+    ]
+  },
+  {
     category: "Volatility",
     color: "#f472b6",
     items: [
@@ -65,6 +77,7 @@ const BLOCKS = [
       { type: "unop",  op: "sqrt", label: "Square Root",        desc: "√ of a value", emoji: "√" },
       { type: "ifelse", cond_op: ">", label: "If / Else",       desc: "Return one value when a condition is true, another when false", emoji: "🔀" },
       { type: "clamp",              label: "Clamp (min/max)",   desc: "Keep a value within a minimum and maximum bound", emoji: "📌" },
+      { type: "group",              label: "Group  ( … )",       desc: "Parenthesise a sub-expression — blocks inside evaluate as a unit before combining with adjacent blocks", emoji: "🔘" },
     ]
   },
 ];
@@ -89,6 +102,7 @@ function makeNode(template) {
     n.lo    = makeNode({ type: 'const', value: 0 });
     n.hi    = makeNode({ type: 'const', value: 100 });
   }
+  if (n.type === 'group') { n.blocks = []; n.ops = []; }
   return n;
 }
 
@@ -103,6 +117,15 @@ function serialiseNode(n) {
   if (n.type === 'unop')   return { node: 'unop',  op: n.op, operand: serialiseNode(n.child) };
   if (n.type === 'ifelse') return { node: 'ifelse', cond_left: serialiseNode(n.cond_left), cond_op: n.cond_op || '>', cond_right: serialiseNode(n.cond_right), then: serialiseNode(n.then), else_: serialiseNode(n.else_) };
   if (n.type === 'clamp')  return { node: 'clamp', value: serialiseNode(n.value), lo: serialiseNode(n.lo), hi: serialiseNode(n.hi) };
+  if (n.type === 'group') {
+    const { blocks = [], ops = [] } = n;
+    if (!blocks.length) return { node: 'const', value: 0 };
+    if (blocks.length === 1) return serialiseNode(blocks[0]);
+    return blocks.slice(1).reduce(
+      (acc, b, i) => ({ node: 'binop', op: ops[i] || '+', left: acc, right: serialiseNode(b) }),
+      serialiseNode(blocks[0])
+    );
+  }
   return { node: 'const', value: 0 };
 }
 
@@ -129,11 +152,17 @@ function describeNode(n) {
   if (n.type === 'unop')    return `${n.op}(${describeNode(n.child)})`;
   if (n.type === 'ifelse')  return `if(${describeNode(n.cond_left)} ${n.cond_op} ${describeNode(n.cond_right)}) ? ${describeNode(n.then)} : ${describeNode(n.else_)}`;
   if (n.type === 'clamp')   return `clamp(${describeNode(n.value)}, ${describeNode(n.lo)}, ${describeNode(n.hi)})`;
+  if (n.type === 'group') {
+    const inner = (n.blocks || [])
+      .map((b, i) => (i > 0 ? ` ${(n.ops || [])[i - 1] || '+'} ` : '') + describeNode(b))
+      .join('');
+    return `(${inner || '…'})`;
+  }
   return '?';
 }
 
 // ─── Param editing for a placed block ────────────────────────────────────────
-const PRICE_FIELDS = ['bid', 'ask', 'mid', 'volume'];
+const PRICE_FIELDS = ['bid', 'ask', 'mid', 'high', 'low', 'volume'];
 
 function BlockParams({ node, onChange }) {
   if (!node) return null;
@@ -149,7 +178,7 @@ function BlockParams({ node, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-      {node.opType && ['price', 'lookback', 'sma', 'ema', 'rsi', 'bollinger'].includes(node.opType) && (
+      {node.opType && ['price', 'lookback', 'sma', 'ema', 'rsi', 'bollinger', 'highest_high', 'lowest_low'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Price type:</span>
           <select value={node.field || 'mid'} style={selectStyle} onChange={e => set('field', e.target.value)}>
@@ -157,7 +186,7 @@ function BlockParams({ node, onChange }) {
           </select>
         </label>
       )}
-      {node.opType && ['lookback','sma','ema','rsi','bollinger'].includes(node.opType) && (
+      {node.opType && ['lookback','sma','ema','rsi','bollinger','highest_high','lowest_low','atr'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Period (bars):</span>
           <input type="number" value={node.period || 14} min={1} style={inputStyle}
@@ -234,33 +263,80 @@ function BlockParams({ node, onChange }) {
 function NodeMiniPicker({ node, onSet }) {
   const [open, setOpen] = useState(false);
   const allItems = BLOCKS.flatMap(b => b.items.map(i => ({ ...i, catColor: b.color })));
+  const set = (k, v) => onSet({ ...node, [k]: v });
+  const hasPeriod = node?.type === 'operand' && ['lookback','sma','ema','rsi','bollinger','highest_high','lowest_low','atr'].includes(node.opType);
+  const hasField  = node?.type === 'operand' && ['price','lookback','sma','ema','rsi','bollinger','highest_high','lowest_low'].includes(node.opType);
+
   return (
-    <div style={{ position: 'relative' }}>
-      <button style={{ ...pillStyle, fontSize: '0.72rem', padding: '3px 10px', background: '#1e293b' }}
-        onClick={() => setOpen(o => !o)}>
-        {describeNode(node)} ▾
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', zIndex: 99, top: '100%', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 10, padding: 6, width: 260, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-          <div style={{ fontSize: '0.7rem', color: '#6b7280', padding: '2px 4px 6px' }}>Choose a block:</div>
-          {allItems.map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              onClick={() => { onSet(makeNode(item)); setOpen(false); }}>
-              <span>{item.emoji}</span>
-              <span style={{ color: '#e5e7eb' }}>{item.label}</span>
-            </div>
-          ))}
-          <div style={{ borderTop: '1px solid #1f2937', marginTop: 4, paddingTop: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              onClick={() => { onSet(makeNode({ type: 'const', value: 0 })); setOpen(false); }}>
-              <span>🔢</span><span style={{ color: '#e5e7eb' }}>Fixed Number</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+      {/* Type picker */}
+      <div style={{ position: 'relative' }}>
+        <button style={{ ...pillStyle, fontSize: '0.72rem', padding: '3px 10px', background: '#1e293b' }}
+          onClick={() => setOpen(o => !o)}>
+          {describeNode(node)} ▾
+        </button>
+        {open && (
+          <div style={{ position: 'absolute', zIndex: 99, top: '100%', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 10, padding: 6, width: 260, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', padding: '2px 4px 6px' }}>Choose a block:</div>
+            {allItems.map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                onClick={() => { onSet(makeNode(item)); setOpen(false); }}>
+                <span>{item.emoji}</span>
+                <span style={{ color: '#e5e7eb' }}>{item.label}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid #1f2937', marginTop: 4, paddingTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                onClick={() => { onSet(makeNode({ type: 'const', value: 0 })); setOpen(false); }}>
+                <span>🔢</span><span style={{ color: '#e5e7eb' }}>Fixed Number</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Inline param editing */}
+      {node?.type === 'const' && (
+        <input type="number" title="Value" value={node.value ?? 0} style={{ ...inputStyle, width: 58 }}
+          onChange={e => set('value', parseFloat(e.target.value) || 0)} />
+      )}
+      {hasPeriod && (
+        <input type="number" title="Period (bars)" placeholder="N bars" value={node.period ?? ''} min={1} style={{ ...inputStyle, width: 52 }}
+          onChange={e => set('period', parseInt(e.target.value) || 1)} />
+      )}
+      {hasField && (
+        <select title="Price field" value={node.field || 'mid'} style={{ ...selectStyle, fontSize: '0.72rem', padding: '2px 4px' }}
+          onChange={e => set('field', e.target.value)}>
+          {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
+        </select>
+      )}
+      {node?.type === 'operand' && node.opType === 'bollinger' && (
+        <>
+          <input type="number" title="Std Dev" value={node.std_dev ?? 2} min={0.1} step={0.1} style={{ ...inputStyle, width: 44 }}
+            onChange={e => set('std_dev', parseFloat(e.target.value) || 2)} />
+          <select title="Component" value={node.component || 'upper'} style={{ ...selectStyle, fontSize: '0.72rem', padding: '2px 4px' }}
+            onChange={e => set('component', e.target.value)}>
+            {['upper','lower','middle','width','pct_b'].map(c => <option key={c}>{c}</option>)}
+          </select>
+        </>
+      )}
+      {node?.type === 'operand' && node.opType === 'macd' && (
+        <>
+          <input type="number" title="Fast EMA" value={node.fast ?? 12} min={1} style={{ ...inputStyle, width: 40 }}
+            onChange={e => set('fast', parseInt(e.target.value) || 12)} />
+          <input type="number" title="Slow EMA" value={node.slow ?? 26} min={1} style={{ ...inputStyle, width: 40 }}
+            onChange={e => set('slow', parseInt(e.target.value) || 26)} />
+          <input type="number" title="Signal" value={node.signal ?? 9} min={1} style={{ ...inputStyle, width: 40 }}
+            onChange={e => set('signal', parseInt(e.target.value) || 9)} />
+          <select title="Component" value={node.component || 'macd'} style={{ ...selectStyle, fontSize: '0.72rem', padding: '2px 4px' }}
+            onChange={e => set('component', e.target.value)}>
+            {['macd','signal','hist'].map(c => <option key={c}>{c}</option>)}
+          </select>
+        </>
       )}
     </div>
   );
@@ -270,8 +346,72 @@ const inputStyle = { background: '#0f172a', border: '1px solid #334155', borderR
 const selectStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '3px 8px', color: '#e5e7eb', fontSize: '0.85rem' };
 const pillStyle = { background: '#1e293b', border: '1px solid #334155', borderRadius: 999, padding: '5px 14px', color: '#e5e7eb', fontSize: '0.8rem', cursor: 'pointer' };
 
+// ─── Group block — mini-canvas for parenthesised sub-expressions ──────────────
+function GroupBlock({ node, onUpdate, onRemove }) {
+  const handleDrop = e => {
+    try {
+      const raw = JSON.parse(e.dataTransfer.getData('block'));
+      const newBlock = makeNode(raw);
+      const newOps = node.blocks.length > 0 ? [...(node.ops || []), '+'] : (node.ops || []);
+      onUpdate({ ...node, blocks: [...node.blocks, newBlock], ops: newOps });
+    } catch {}
+  };
+
+  const removeInner = id => {
+    const idx = node.blocks.findIndex(b => b._id === id);
+    const newBlocks = node.blocks.filter(b => b._id !== id);
+    const newOps = [...(node.ops || [])];
+    if (idx > 0) newOps.splice(idx - 1, 1);
+    else if (newOps.length > 0) newOps.splice(0, 1);
+    onUpdate({ ...node, blocks: newBlocks, ops: newOps });
+  };
+
+  const updateInner = updated =>
+    onUpdate({ ...node, blocks: node.blocks.map(b => b._id === updated._id ? updated : b) });
+
+  const setOp = (idx, op) => {
+    const newOps = [...(node.ops || [])];
+    newOps[idx] = op;
+    onUpdate({ ...node, ops: newOps });
+  };
+
+  return (
+    <div style={{ background: '#0b1120', border: '1px dashed #6366f1', borderRadius: 12, padding: '10px 14px', marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: '1rem' }}>🔘</span>
+        <span style={{ flex: 1, fontWeight: 600, fontSize: '0.85rem', color: '#a5b4fc', fontFamily: 'ui-monospace, monospace' }}>
+          {describeNode(node)}
+        </span>
+        <button
+          style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 6, color: '#ef4444', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
+          onClick={onRemove}>✕</button>
+      </div>
+      <DropZone onDrop={handleDrop} isEmpty={node.blocks.length === 0}>
+        {node.blocks.map((b, idx) => (
+          <div key={b._id}>
+            {idx > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
+                <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>combine with</span>
+                <select
+                  value={(node.ops || [])[idx - 1] || '+'}
+                  style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}
+                  onChange={e => setOp(idx - 1, e.target.value)}>
+                  {['+', '-', '*', '/'].map(op => <option key={op} value={op}>{op}</option>)}
+                </select>
+              </div>
+            )}
+            <PlacedBlock node={b} onUpdate={updateInner} onRemove={() => removeInner(b._id)} />
+          </div>
+        ))}
+      </DropZone>
+    </div>
+  );
+}
+
 // ─── Placed block pill in the canvas ─────────────────────────────────────────
 function PlacedBlock({ node, onUpdate, onRemove }) {
+  if (node.type === 'group') return <GroupBlock node={node} onUpdate={onUpdate} onRemove={onRemove} />;
+
   const [expanded, setExpanded] = useState(false);
   const all = BLOCKS.flatMap(b => b.items.map(i => ({ ...i, catColor: b.color })));
   const template = all.find(i => {
@@ -311,9 +451,9 @@ function DropZone({ onDrop, children, isEmpty }) {
   const [over, setOver] = useState(false);
   return (
     <div
-      onDragOver={e => { e.preventDefault(); setOver(true); }}
+      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={e => { e.preventDefault(); setOver(false); onDrop(e); }}
+      onDrop={e => { e.preventDefault(); e.stopPropagation(); setOver(false); onDrop(e); }}
       style={{
         minHeight: isEmpty ? 100 : 'auto',
         border: over ? '2px dashed #22d3ee' : '2px dashed transparent',
@@ -366,6 +506,12 @@ export default function IndicatorBuilder() {
   const [error, setError]           = useState('');
   const [filter, setFilter]         = useState('');
   const [mode, setMode]             = useState('build'); // 'build' | 'ai-indicator'
+  const [aiGeneratedIndicator, setAiGeneratedIndicator] = useState(null);
+  const [savedStrategies, setSavedStrategies] = useState([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/db/strategies`).then(r => r.json()).then(d => setSavedStrategies(d.strategies || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -378,10 +524,13 @@ export default function IndicatorBuilder() {
           const actualExpr = wrapper.expr || null;
           return {
             _id: String(_indId++),
+            id: ind.id,
             name: ind.name,
             description: wrapper.description || '',
             color: wrapper.color || '#22d3ee',
             blocks: actualExpr ? [inflateNode(actualExpr)] : [],
+            ops: [],
+            is_builtin: ind.is_builtin || false,
           };
         });
         setIndicators(loaded);
@@ -394,9 +543,29 @@ export default function IndicatorBuilder() {
   const active = indicators.find(i => i._id === activeId);
 
   const addIndicator = () => {
-    const ind = { _id: String(_indId++), name: 'My Indicator', description: '', color: '#22d3ee', blocks: [] };
+    const ind = { _id: String(_indId++), name: 'My Indicator', description: '', color: '#22d3ee', blocks: [], ops: [] };
     setIndicators(p => [...p, ind]);
     setActiveId(ind._id);
+  };
+
+  const handleIndicatorGenerated = (result) => {
+    setAiGeneratedIndicator(result);
+  };
+
+  const addAiIndicator = () => {
+    if (!aiGeneratedIndicator) return;
+    const inflated = aiGeneratedIndicator.expr ? [inflateNode(aiGeneratedIndicator.expr)] : [];
+    const ind = {
+      _id: String(_indId++),
+      name: aiGeneratedIndicator.name || 'AI Indicator',
+      description: aiGeneratedIndicator.description || '',
+      color: aiGeneratedIndicator.color || '#22d3ee',
+      blocks: inflated,
+      ops: [],
+    };
+    setIndicators(p => [...p, ind]);
+    setActiveId(ind._id);
+    setMode('build');
   };
 
   const updateActive = upd => setIndicators(p => p.map(i => i._id === upd._id ? upd : i));
@@ -410,19 +579,28 @@ export default function IndicatorBuilder() {
     try {
       const raw = JSON.parse(e.dataTransfer.getData('block'));
       const node = makeNode(raw);
-      updateActive({ ...active, blocks: [...active.blocks, node] });
+      const newOps = active.blocks.length > 0 ? [...(active.ops || []), '+'] : (active.ops || []);
+      updateActive({ ...active, blocks: [...active.blocks, node], ops: newOps });
     } catch {}
   };
 
-  const removeBlock = id => updateActive({ ...active, blocks: active.blocks.filter(b => b._id !== id) });
+  const removeBlock = id => {
+    const idx = active.blocks.findIndex(b => b._id === id);
+    const newBlocks = active.blocks.filter(b => b._id !== id);
+    const newOps = [...(active.ops || [])];
+    if (idx > 0) newOps.splice(idx - 1, 1);
+    else if (newOps.length > 0) newOps.splice(0, 1);
+    updateActive({ ...active, blocks: newBlocks, ops: newOps });
+  };
   const updateBlock = updated => updateActive({ ...active, blocks: active.blocks.map(b => b._id === updated._id ? updated : b) });
 
-  // For save, combine multiple blocks with binop + chain or just use first
-  const buildExpr = blocks => {
+  const buildExpr = (blocks, ops = []) => {
     if (!blocks.length) return null;
     if (blocks.length === 1) return serialiseNode(blocks[0]);
-    // chain them with + by default; user can change math nodes
-    return blocks.slice(1).reduce((acc, b) => ({ node: 'binop', op: '+', left: acc, right: serialiseNode(b) }), serialiseNode(blocks[0]));
+    return blocks.slice(1).reduce(
+      (acc, b, i) => ({ node: 'binop', op: ops[i] || '+', left: acc, right: serialiseNode(b) }),
+      serialiseNode(blocks[0])
+    );
   };
 
   const save = async () => {
@@ -430,11 +608,11 @@ export default function IndicatorBuilder() {
     if (invalid) { setError('All indicators need a name.'); return; }
     setError(''); setSaving(true);
     try {
-      const payload = indicators.map(ind => ({
+      const payload = indicators.filter(ind => !ind.is_builtin).map(ind => ({
         name: ind.name,
         description: ind.description,
         color: ind.color,
-        expr: buildExpr(ind.blocks),
+        expr: buildExpr(ind.blocks, ind.ops || []),
       }));
       await fetch(`${API_BASE}/db/indicators`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ indicators: payload }) });
       alert('Indicators saved!');
@@ -492,11 +670,36 @@ export default function IndicatorBuilder() {
       {/* AI Indicator Mode */}
       {mode === 'ai-indicator' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, minHeight: 600 }}>
-          <AIIndicatorChat />
+          <AIIndicatorChat onIndicatorGenerated={handleIndicatorGenerated} />
           <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 12, padding: 16, overflow: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
-              Generated indicators will appear here. Save them to use in strategies.
-            </div>
+            {aiGeneratedIndicator ? (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: aiGeneratedIndicator.color || '#22d3ee', flexShrink: 0 }} />
+                    <h3 style={{ fontSize: '1rem', color: '#e5e7eb', margin: 0 }}>{aiGeneratedIndicator.name}</h3>
+                  </div>
+                  {aiGeneratedIndicator.description && (
+                    <div style={{ fontSize: '0.82rem', color: '#9ca3af', marginBottom: 12 }}>{aiGeneratedIndicator.description}</div>
+                  )}
+                  {aiGeneratedIndicator.expr && (
+                    <div style={{ background: '#0f172a', border: '1px dashed #334155', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: '0.78rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>
+                      {describeNode(inflateNode(aiGeneratedIndicator.expr))}
+                    </div>
+                  )}
+                </div>
+                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#6b7280', fontSize: '0.68rem', overflow: 'auto', maxHeight: 340, marginBottom: 12 }}>
+                  {JSON.stringify(aiGeneratedIndicator.expr, null, 2)}
+                </pre>
+                <button className="btn btn-primary" style={{ width: '100%' }} onClick={addAiIndicator}>
+                  + Add to My Indicators
+                </button>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
+                Generated indicator will appear here
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -543,8 +746,20 @@ export default function IndicatorBuilder() {
                         style={{ width: 18, height: 18, borderRadius: 4, background: c, cursor: 'pointer', border: active.color === c ? '2px solid #fff' : '2px solid transparent', transition: 'all 0.15s' }} />
                     ))}
                   </div>
-                  <button onClick={() => deleteIndicator(active._id)}
-                    style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>Delete</button>
+                  {!active.is_builtin && (
+                    <button onClick={() => {
+                      const affected = savedStrategies.filter(s => JSON.stringify(s.config).includes(active.name));
+                      if (affected.length > 0) {
+                        const names = affected.map(s => `"${s.name}"`).join(', ');
+                        if (!window.confirm(`"${active.name}" is used in ${affected.length} strategy(s): ${names}.\n\nDelete it anyway?`)) return;
+                      }
+                      deleteIndicator(active._id);
+                    }}
+                      style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>Delete</button>
+                  )}
+                  {active.is_builtin && (
+                    <span style={{ fontSize: '0.72rem', color: '#4b5563', border: '1px solid #1f2937', borderRadius: 8, padding: '4px 10px' }}>Built-in</span>
+                  )}
                 </div>
 
                 <input
@@ -557,25 +772,37 @@ export default function IndicatorBuilder() {
                 {active.blocks.length > 0 && (
                   <div style={{ background: '#0b1120', border: '1px dashed #334155', borderRadius: 10, padding: '8px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>
                     {active.blocks.map((b, i) => (
-                      <span key={b._id}>{i > 0 ? <span style={{ color: '#f59e0b' }}> + </span> : null}{describeNode(b)}</span>
+                      <span key={b._id}>
+                        {i > 0 ? <span style={{ color: '#f59e0b' }}> {active.ops?.[i - 1] || '+'} </span> : null}
+                        {describeNode(b)}
+                      </span>
                     ))}
                   </div>
                 )}
 
                 {/* Drop zone */}
                 <DropZone onDrop={handleDrop} isEmpty={active.blocks.length === 0}>
-                  {active.blocks.map(b => (
-                    <PlacedBlock key={b._id} node={b}
-                      onUpdate={updateBlock}
-                      onRemove={() => removeBlock(b._id)} />
+                  {active.blocks.map((b, idx) => (
+                    <div key={b._id}>
+                      {idx > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
+                          <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>combine with</span>
+                          <select
+                            value={active.ops?.[idx - 1] || '+'}
+                            style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}
+                            onChange={e => {
+                              const newOps = [...(active.ops || [])];
+                              newOps[idx - 1] = e.target.value;
+                              updateActive({ ...active, ops: newOps });
+                            }}>
+                            {['+', '-', '*', '/'].map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <PlacedBlock node={b} onUpdate={updateBlock} onRemove={() => removeBlock(b._id)} />
+                    </div>
                   ))}
                 </DropZone>
-
-                {active.blocks.length > 1 && (
-                  <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 8 }}>
-                    💡 Multiple blocks are combined with addition by default. Use a "Subtract/Multiply/Divide" math block to change how they combine.
-                  </p>
-                )}
               </div>
             )}
           </div>

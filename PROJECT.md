@@ -133,6 +133,19 @@ Executes rule-based strategies. Each rule has:
 
 `RuleSetStrategy.warmup_bars` — returns the max indicator lookback across all conditions so the engine skips early bars.
 
+### `indicator_registry.py`
+Custom indicator store and expression tree evaluator.
+- `INDICATOR_REGISTRY` — singleton; loaded from DB at startup via `_reload_indicator_registry()` in `api.py`
+- `IndicatorDef` — stores `name`, `expr` (expression tree), `description`, `color`
+  - `evaluate(series, overrides=None)` — evaluates the expression tree, substituting any override values
+  - `editable_params` property — returns `[{path, label, default_value, param_type}]` for every tweakable leaf
+- `extract_editable_params(expr, path="")` — walks an expression tree and returns a flat list of editable numeric fields; used by the AI context builder and the StrategyBuilder frontend
+- `_eval_node(node, series, overrides, path)` — recursive evaluator; `const` nodes check `overrides[path]`; `operand` nodes apply overrides to `period`/`std_dev`/`fast`/`slow`/`signal`
+- `CustomIndicatorOperand` — registered as `type: "custom"` in the operand registry
+  - Stores `name: str` and `overrides: Dict[str, float]`
+  - Serializes as `{"type": "custom", "name": "X", "overrides": {...}}` (omits `overrides` key when empty)
+  - Calls `defn.evaluate(series, overrides=self.overrides)` at runtime
+
 ### Operand warmup requirements
 | Operand | `min_bars` |
 |---|---|
@@ -176,10 +189,12 @@ All SQLite access is centralised here. Never import `sqlite3` directly elsewhere
 ### Database — Strategies & Indicators
 | Method | Path | Description |
 |---|---|---|
-| GET | `/db/strategies` | List all saved strategies |
-| POST | `/db/strategies` | Save strategies |
-| GET | `/db/indicators` | List all saved indicators |
-| POST | `/db/indicators` | Save indicators |
+| GET | `/db/strategies` | List all saved strategies (includes `is_builtin` flag) |
+| POST | `/db/strategies` | Save / upsert strategies |
+| DELETE | `/db/strategies/{id}` | Delete a strategy (403 if built-in) |
+| GET | `/db/indicators` | List all saved indicators (includes `is_builtin` flag) |
+| POST | `/db/indicators` | Save / upsert indicators |
+| DELETE | `/db/indicators/{id}` | Delete an indicator (403 if built-in) |
 
 ### Database — Run History
 | Method | Path | Description |
@@ -254,10 +269,14 @@ Manual builder:
 - Load / Save to DB
 - JSON preview toggle
 
+**Custom indicator conditions**: when a condition's left operand is `type: "custom"`, the expanded condition card renders a `CustomOperandPanel` instead of the generic `OperandEditor`. This panel shows the indicator name and inline number inputs for every editable parameter (extracted via `getEditableParams(ind.expr.expr)`). Edited values are stored as `left.overrides: {path: value}` and serialized into the strategy JSON. The condition summary shows `🔷 IndicatorName (N overrides)` when any overrides are set.
+
 ### `IndicatorBuilder.jsx`
 Expression tree editor for custom indicators. Supports:
 - `const`, `operand` (price/SMA/EMA/RSI/MACD/Bollinger), `binop` (+−×÷^%), `unop` (neg/abs/sqrt/log), `clamp`, `ifelse`
 - AI chat tab to generate expression trees from natural language
+
+**Parameter overridability**: all `const` node values and operand numeric params (`period`, `std_dev`, `fast`, `slow`, `signal`) stored in an indicator's expression tree are overridable per strategy use — no rebuild needed. The AI indicator builder is instructed to place tunable values in explicit `const` nodes and always include `period` params so they appear as override inputs in StrategyBuilder.
 
 ### `KeyManager.jsx`
 Multi-key manager. Two panels:
@@ -326,14 +345,16 @@ CREATE TABLE strategies (
     id INTEGER PRIMARY KEY,
     name TEXT,
     logic TEXT,          -- "rule_based"
-    config TEXT          -- JSON: { rule_set: { name, rules: [...] } }
+    config TEXT,         -- JSON: { rule_set: { name, rules: [...] } }
+    is_builtin INTEGER DEFAULT 0  -- 1 = pre-seeded; deletion blocked
 );
 
 -- Custom indicators
 CREATE TABLE indicators (
     id INTEGER PRIMARY KEY,
     name TEXT,
-    expression TEXT      -- JSON expression tree
+    expression TEXT,     -- JSON expression tree
+    is_builtin INTEGER DEFAULT 0  -- 1 = pre-seeded; deletion blocked
 );
 
 -- Data provider API keys (multi-key, one active at a time)
@@ -414,7 +435,7 @@ These options are passed through the API form fields, applied in `engine.py`, an
 
 All providers return rows shaped as:
 ```python
-{"timestamp": str, "open": float, "bid": float, "ask": float, "volume": float, "symbol": str}
+{"timestamp": str, "open": float, "high": float, "low": float, "bid": float, "ask": float, "volume": float, "symbol": str}
 ```
 
 | Provider ID | Notes | Search API |
@@ -442,11 +463,18 @@ Endpoint: `POST /ai/build-strategy`
 - Returns: `{name, rules, warnings}` matching the rule-set format
 - AI-generated rules are loaded directly into the Manual Builder on "Edit in Manual Builder"
 
+**Custom indicator context**: `_get_custom_indicator_context()` in `api.py` appends a section to the system prompt listing every user-created indicator with its description and editable parameter paths + defaults (e.g. `params: cond_right=30, cond_left.operand.period=14`). The AI is instructed to set `overrides` when the user specifies custom values, and to omit `overrides` otherwise.
+
+**Auto-populate overrides**: `_auto_populate_overrides(strategy)` in `api.py` is called after AI generation and validation. It walks all conditions and, for any `custom` operand with no `overrides`, fills in the indicator's default param values from the registry. This makes every generated strategy self-documenting. Existing AI-set overrides take priority.
+
+**`AIStrategyChat.jsx`**: loads custom indicators on mount and appends their names + parameter hint to the welcome message. Model name badge now correctly fetches from `GET /db/model-keys`.
+
 ### AI Indicator Builder
 Endpoint: `POST /ai/build-indicator`
 - Accepts: `{prompt: str}`
 - Returns: `{name, description, expr, color}` — an expression tree
 - Expression tree nodes: `const`, `operand`, `binop`, `unop`, `clamp`, `ifelse`
+- System prompt includes "Parameter Overridability" section: instructs AI to put thresholds/multipliers in `const` nodes and always include explicit `period` params, maximising per-use overridability
 
 Both chat UIs display the active model name as a pill badge in the header. Shows "No AI model configured" if no model key is saved.
 
@@ -506,3 +534,20 @@ Only one key per table can be `active=1` at a time.
 | Re-running the same strategy did not create a new Analytics entry (dedup collision) | `run_at` timestamp added to hash params; every run now inserts a unique row |
 | Pre-built strategies disappeared when another session or agent modified the DB | `seed_prebuilts.seed()` now called at every server startup (idempotent) |
 | Analytics sidebar showed no capital, timeframe, or execution settings for saved runs | Capital + timeframe added to `RunCard`; execution params shown as badges in detail header via `params` field |
+| `POST /db/strategies` wiped ALL strategies on every save (DELETE + INSERT of only 1) | Changed to upsert logic — update by id/name, never delete existing rows |
+| `Backtest.jsx` called non-existent `GET /db/api_keys` → ticker search always disabled | Changed to `GET /db/data-keys`, checks `d.keys?.some(k => k.active)` |
+| Blocked signals never logged in `_signal_log` (append inside `if not blocked:`) | Moved `_signal_log.append` outside the guard; blocked signals now recorded with `blocked: true` |
+| Switching operand type to Bollinger in StrategyBuilder → `KeyError` crash (missing `component`) | Backend: `d.get("component", "upper")` default. Frontend: type-change sets `component: "upper"`, `std_dev: 2` |
+| `day_of_week` exit condition: frontend sent 0-6 (Sunday=0), backend used ISO 1-7 (Sunday=7) | Frontend DOW array aligned to ISO weekday (1=Mon..7=Sun); AI system prompt updated |
+| `take_profit_abs` / `stop_loss_abs` used `starting_cash` instead of `entry_equity` as baseline | Changed to use `entry_equity` (with fallback to `starting_cash` if None) |
+| `_bars_in_trade` counter counted bars since last rule fire, not bars since trade entry | Fixed: increments while position held, resets when flat (for exit rules) |
+| AI validator rejected exit-condition-only rules (empty `conditions` array) | Allow empty `conditions` if rule has exit conditions |
+| StrategyBuilder save pushed `{name}` without `config` → load from dropdown failed | Optimistic update now includes full strategy object with config |
+| MACD deque skipped append when consecutive ticks had identical MACD values | Track tick index per MACD key; append exactly once per tick regardless of value |
+| All 6 data providers omitted `high`/`low` from fetched rows → `highest_high`/`lowest_low`/ATR/Williams %R all used `close` for both, producing NaN or constant values | All providers now extract `high`/`low` from API responses and include them in row dicts |
+| StrategyBuilder page went blank when all rules were deleted (`useState(rules[0]._id)` crashed when `rules=[]`) | Lazy initialiser `useState(() => rules[0]?._id ?? null)` + `useEffect` auto-corrects `selectedRole` when its role becomes empty |
+| No way to delete a saved strategy; deleting all rules to "clear" a strategy caused a blank page crash | Added `DELETE /db/strategies/{id}` endpoint; frontend: `loadedStrategyId` tracks the loaded record; toolbar "Delete Strategy" button deletes from DB; saving with 0 rules and a loaded strategy also deletes it |
+| Deleting an indicator gave no warning when strategies referenced it | IndicatorBuilder fetches all strategies on mount; shows a `confirm()` listing affected strategy names before allowing delete |
+| Built-in strategies and indicators could be deleted | `is_builtin INTEGER DEFAULT 0` column added to both tables; `DELETE` endpoints return 403 for built-in rows; `seed_prebuilts.seed()` sets `is_builtin=1`; frontend hides "Delete" / "Delete Strategy" buttons for built-in records |
+| `AIStrategyChat.jsx` model name badge never showed (called non-existent `GET /db/api_keys`) | Changed to `GET /db/model-keys`; finds the key with `active: true` to display its `model_name` |
+| Custom indicator conditions in StrategyBuilder had no UI for adjusting internal values | Added `CustomOperandPanel` + `getEditableParams()` in StrategyBuilder; `overrides` dict on `CustomIndicatorOperand`; `_eval_node` applies overrides at runtime; AI strategy builder context includes param paths and auto-populates defaults |

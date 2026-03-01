@@ -305,13 +305,16 @@ def seed():
     s_skipped  = 0
     for s in STRATEGIES:
         cur.execute("SELECT id FROM strategies WHERE name = ?", (s["name"],))
-        if cur.fetchone():
+        row = cur.fetchone()
+        if row:
+            # Ensure is_builtin flag is set on existing rows
+            cur.execute("UPDATE strategies SET is_builtin = 1 WHERE id = ?", (row["id"],))
             s_skipped += 1
             continue
         config = s["config"]
         config_str = json.dumps({"rule_set": config}) if "rules" in config else json.dumps(config)
         cur.execute(
-            "INSERT INTO strategies (name, logic, config) VALUES (?, ?, ?)",
+            "INSERT INTO strategies (name, logic, config, is_builtin) VALUES (?, ?, ?, 1)",
             (s["name"], s["logic"], config_str),
         )
         s_inserted += 1

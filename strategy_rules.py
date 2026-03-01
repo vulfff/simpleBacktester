@@ -108,6 +108,8 @@ class PriceField(str, Enum):
     BID    = "bid"
     ASK    = "ask"
     MID    = "mid"
+    HIGH   = "high"
+    LOW    = "low"
     VOLUME = "volume"
 
 
@@ -263,7 +265,7 @@ class BollingerOperand(Operand):
             field=PriceField(d["field"]),
             period=int(d["period"]),
             std_dev=float(d.get("std_dev", 2.0)),
-            component=BollingerComponent(d["component"]),
+            component=BollingerComponent(d.get("component", "upper")),
         )
 
 
@@ -303,6 +305,126 @@ class MACDOperand(Operand):
             signal=int(d.get("signal", 9)),
             component=MACDComponent(d.get("component", "macd")),
         )
+
+
+# ── Highest High ─────────────────────────────────────────────────────────────
+
+@_reg
+@dataclass
+class HighestHighOperand(Operand):
+    _type_tag = "highest_high"
+    field: PriceField = PriceField.HIGH
+    period: int = 14
+
+    @property
+    def min_bars(self) -> int:
+        return self.period
+
+    def value(self, series: "PriceSeries") -> float:
+        return series.highest(self.field, self.period)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "highest_high", "field": self.field.value, "period": self.period}
+
+    @classmethod
+    def _from_dict(cls, d: Dict[str, Any]) -> "HighestHighOperand":
+        return cls(field=PriceField(d.get("field", "high")), period=int(d["period"]))
+
+
+# ── Lowest Low ────────────────────────────────────────────────────────────────
+
+@_reg
+@dataclass
+class LowestLowOperand(Operand):
+    _type_tag = "lowest_low"
+    field: PriceField = PriceField.LOW
+    period: int = 14
+
+    @property
+    def min_bars(self) -> int:
+        return self.period
+
+    def value(self, series: "PriceSeries") -> float:
+        return series.lowest(self.field, self.period)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "lowest_low", "field": self.field.value, "period": self.period}
+
+    @classmethod
+    def _from_dict(cls, d: Dict[str, Any]) -> "LowestLowOperand":
+        return cls(field=PriceField(d.get("field", "low")), period=int(d["period"]))
+
+
+# ── ATR ───────────────────────────────────────────────────────────────────────
+
+@_reg
+@dataclass
+class ATROperand(Operand):
+    _type_tag = "atr"
+    period: int = 14
+
+    @property
+    def min_bars(self) -> int:
+        return self.period + 1
+
+    def value(self, series: "PriceSeries") -> float:
+        return series.atr(self.period)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "atr", "period": self.period}
+
+    @classmethod
+    def _from_dict(cls, d: Dict[str, Any]) -> "ATROperand":
+        return cls(period=int(d.get("period", 14)))
+
+
+# ── Typical Price ─────────────────────────────────────────────────────────────
+
+@_reg
+@dataclass
+class TypicalPriceOperand(Operand):
+    _type_tag = "typical_price"
+
+    def value(self, series: "PriceSeries") -> float:
+        return series.typical_price()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "typical_price"}
+
+    @classmethod
+    def _from_dict(cls, d: Dict[str, Any]) -> "TypicalPriceOperand":
+        return cls()
+
+
+# ── Time of Day ───────────────────────────────────────────────────────────────
+
+@_reg
+@dataclass
+class TimeOfDayOperand(Operand):
+    """Returns current bar time as minutes since midnight (0–1439).
+
+    Allows time-filtered signal conditions, e.g.:
+      time_of_day >= 570  →  at or after 09:30
+      time_of_day <  960  →  before 16:00
+    """
+    _type_tag = "time_of_day"
+
+    @property
+    def min_bars(self) -> int:
+        return 1
+
+    def value(self, series: "PriceSeries") -> float:
+        t = getattr(series, "_current_time", None)
+        if t is None:
+            return math.nan
+        return float(t.hour * 60 + t.minute)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "time_of_day"}
+
+    @classmethod
+    def _from_dict(cls, d: Dict[str, Any]) -> "TimeOfDayOperand":
+        return cls()
 
 
 # ---------------------------------------------------------------------------
@@ -395,10 +517,12 @@ class ExitCondition:
             pnl_pct = _portfolio_pnl_pct(portfolio, entry_equity)
             return pnl_pct is not None and pnl_pct <= -self.value
         if t == "take_profit_abs":
-            pnl = portfolio.total_value() - portfolio.starting_cash
+            baseline = entry_equity if entry_equity is not None else portfolio.starting_cash
+            pnl = portfolio.total_value() - baseline
             return pnl >= self.value
         if t == "stop_loss_abs":
-            pnl = portfolio.total_value() - portfolio.starting_cash
+            baseline = entry_equity if entry_equity is not None else portfolio.starting_cash
+            pnl = portfolio.total_value() - baseline
             return pnl <= -self.value
         if t == "bars_held":
             return bars_in_trade >= int(self.value)
@@ -513,10 +637,24 @@ class Rule:
             fire = result and not self._prev_result
 
         self._prev_result = result
-        if fire:
-            self._bars_in_trade = 0
+
+        # Track bars in trade for exit conditions (bars_held).
+        # For exit rules: increment each bar while position is held, reset when flat.
+        # For entry rules: the counter is unused, just keep incrementing.
+        if portfolio is not None and tick is not None:
+            pos = portfolio.positions.get(tick.name, 0.0)
+            if self.role in (RuleRole.EXIT_LONG, RuleRole.EXIT_SHORT):
+                if abs(pos) > 1e-9:
+                    self._bars_in_trade += 1
+                else:
+                    self._bars_in_trade = 0
+            else:
+                self._bars_in_trade += 1
         else:
             self._bars_in_trade += 1
+
+        if fire:
+            self._bars_in_trade = 0
         return fire
 
     def to_dict(self) -> Dict[str, Any]:
@@ -605,16 +743,24 @@ class PriceSeries:
         self._bufs:       Dict[str, Deque[float]] = {}
         self._cache:      Dict[Any, float]         = {}
         self._macd_hist:  Dict[Tuple, Deque[float]]= {}  # history of MACD line values
+        self._tick_count: int                       = 0
+        self._macd_last_tick: Dict[Tuple, int]      = {}  # last tick index per MACD key
         self.prev_snapshot: "PriceSeries" = _NullSeries()
+        self._current_time = None  # datetime of the most recent tick
 
     def push(self, tick: TickData) -> None:
         self.prev_snapshot = _SnapShot(self)
+        self._current_time = tick.time
 
         mid = (tick.bid + tick.ask) / 2 if tick.ask else tick.bid
+        bar_high = getattr(tick, "high", 0.0) or tick.bid
+        bar_low  = getattr(tick, "low",  0.0) or tick.bid
         for fname, val in [
             ("bid",    tick.bid),
             ("ask",    tick.ask or tick.bid),
             ("mid",    mid),
+            ("high",   bar_high),
+            ("low",    bar_low),
             ("volume", getattr(tick, "volume", 0.0) or 0.0),
         ]:
             buf = self._bufs.setdefault(fname, deque(maxlen=self._MAX_BUF))
@@ -622,6 +768,7 @@ class PriceSeries:
 
         # Invalidate per-tick cache
         self._cache.clear()
+        self._tick_count += 1
 
     def current(self, field: PriceField) -> float:
         buf = self._bufs.get(field.value)
@@ -729,10 +876,10 @@ class PriceSeries:
         # ── Signal & Histogram: need a history of MACD line values ────────
         hist_key = ("macd_hist", fast, slow)
         macd_deque = self._macd_hist.setdefault(hist_key, deque(maxlen=self._MAX_BUF))
-        # Append current value (this mutates state, but is idempotent per tick
-        # because _cache is cleared on push() and we only reach here once per tick)
-        if not macd_deque or macd_deque[-1] != macd_line:
+        # Append exactly once per tick (tracked via _tick_count)
+        if self._macd_last_tick.get(hist_key) != self._tick_count:
             macd_deque.append(macd_line)
+            self._macd_last_tick[hist_key] = self._tick_count
 
         if len(macd_deque) < signal_period:
             self._cache[key] = math.nan
@@ -755,6 +902,50 @@ class PriceSeries:
         return hist
 
 
+    def highest(self, field: PriceField, period: int) -> float:
+        buf = self.buffer(field, period)
+        if len(buf) < period:
+            return math.nan
+        return max(buf)
+
+    def lowest(self, field: PriceField, period: int) -> float:
+        buf = self.buffer(field, period)
+        if len(buf) < period:
+            return math.nan
+        return min(buf)
+
+    def atr(self, period: int) -> float:
+        """Average True Range over `period` bars.
+        TR = max(high-low, |high-prev_close|, |low-prev_close|)
+        """
+        key = ("atr", period)
+        if key in self._cache:
+            return self._cache[key]
+        highs  = list(self._bufs.get("high", deque()))[-(period + 1):]
+        lows   = list(self._bufs.get("low",  deque()))[-(period + 1):]
+        closes = list(self._bufs.get("mid",  deque()))[-(period + 1):]
+        n = min(len(highs), len(lows), len(closes))
+        if n < period + 1:
+            self._cache[key] = math.nan
+            return math.nan
+        trs = []
+        for i in range(1, n):
+            h, l, pc = highs[i], lows[i], closes[i - 1]
+            trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+        v = sum(trs) / len(trs) if trs else math.nan
+        self._cache[key] = v
+        return v
+
+    def typical_price(self) -> float:
+        """(High + Low + Close) / 3"""
+        h = self.current(PriceField.HIGH)
+        l = self.current(PriceField.LOW)
+        c = self.current(PriceField.MID)
+        if math.isnan(h) or math.isnan(l) or math.isnan(c):
+            return math.nan
+        return (h + l + c) / 3
+
+
 class _NullSeries(PriceSeries):
     """Stub returned as prev_snapshot before the first tick."""
     def __init__(self) -> None:
@@ -763,6 +954,7 @@ class _NullSeries(PriceSeries):
         self._cache     = {}
         self._macd_hist = {}
         self.prev_snapshot = self   # circular — but never queried deeper
+        self._current_time = None
 
     def current(self, *_):    return math.nan
     def ago(self, *_):        return math.nan
@@ -781,6 +973,7 @@ class _SnapShot(PriceSeries):
         self._cache        = dict(src._cache)
         self._macd_hist    = {k: deque(v) for k, v in src._macd_hist.items()}
         self.prev_snapshot = src.prev_snapshot   # chain doesn't need to go deeper
+        self._current_time = src._current_time
 
     def push(self, *_):
         raise RuntimeError("Cannot push to a snapshot")
@@ -907,6 +1100,14 @@ OPERAND_SCHEMA = {
                               {"name": "signal",     "type": "integer", "label": "Signal",  "min": 1},
                               {"name": "component",  "type": "select",  "label": "Component",
                                "options": [c.value for c in MACDComponent]}]},
+    "highest_high": {"params": [{"name": "field",   "type": "select",  "label": "Field",
+                                  "options": [f.value for f in PriceField]},
+                                 {"name": "period",  "type": "integer", "label": "Period",  "min": 1}]},
+    "lowest_low":   {"params": [{"name": "field",   "type": "select",  "label": "Field",
+                                  "options": [f.value for f in PriceField]},
+                                 {"name": "period",  "type": "integer", "label": "Period",  "min": 1}]},
+    "atr":          {"params": [{"name": "period",  "type": "integer", "label": "Period",  "min": 1}]},
+    "typical_price": {"params": []},
 }
 
 OPERATOR_OPTIONS = [op.value for op in Operator]

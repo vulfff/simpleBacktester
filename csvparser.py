@@ -103,6 +103,8 @@ class CSVTickDataFeed:
         "bid":    ["bid", "close", "Close", "price", "Price", "last", "Last"],
         "ask":    ["ask", "Ask"],
         "open":   ["open", "Open", "o"],
+        "high":   ["high", "High", "h", "high_price"],
+        "low":    ["low", "Low", "l", "low_price"],
         "volume": ["volume", "Volume", "vol", "Vol"],
         "name":   ["symbol", "Symbol", "ticker", "Ticker", "asset", "name"],
     }
@@ -143,6 +145,8 @@ class CSVTickDataFeed:
             col_bid    = resolve("bid")
             col_ask    = resolve("ask")
             col_open   = resolve("open")
+            col_high   = resolve("high")
+            col_low    = resolve("low")
             col_volume = resolve("volume")
             col_name   = resolve("name")
 
@@ -168,6 +172,12 @@ class CSVTickDataFeed:
 
                 open_raw = _safe_float(row.get(col_open, "")) if col_open else None
                 bar_open = open_raw if open_raw is not None else bid
+
+                high_raw = _safe_float(row.get(col_high, "")) if col_high else None
+                bar_high = high_raw if high_raw is not None else bid
+
+                low_raw = _safe_float(row.get(col_low, "")) if col_low else None
+                bar_low = low_raw if low_raw is not None else bid
 
                 volume = _safe_float(row.get(col_volume, "")) if col_volume else 0.0
                 if volume is None:
@@ -197,4 +207,6 @@ class CSVTickDataFeed:
                     volume=volume,
                     time=dt,
                     open=bar_open,
+                    high=bar_high,
+                    low=bar_low,
                 )

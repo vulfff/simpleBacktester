@@ -74,6 +74,36 @@ try:
 except Exception:
     pass
 
+
+def _reload_indicator_registry() -> None:
+    """Reload all indicators from DB into the runtime INDICATOR_REGISTRY."""
+    try:
+        from indicator_registry import INDICATOR_REGISTRY
+        conn = get_db_conn()
+        cur  = conn.cursor()
+        cur.execute("SELECT name, expression FROM indicators")
+        defs = []
+        for r in cur.fetchall():
+            try:
+                expr_data = json.loads(r["expression"] or "{}")
+                expr = expr_data.get("expr")
+                if expr:
+                    defs.append({
+                        "name":        r["name"],
+                        "expr":        expr,
+                        "description": expr_data.get("description", ""),
+                        "color":       expr_data.get("color", "#22d3ee"),
+                    })
+            except (json.JSONDecodeError, TypeError):
+                pass
+        conn.close()
+        INDICATOR_REGISTRY.load(defs)
+    except Exception:
+        pass
+
+
+_reload_indicator_registry()
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class BacktestResult(BaseModel):
@@ -132,35 +162,109 @@ class AIStrategyResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+def _get_custom_indicator_context() -> str:
+    """Build a system-prompt section listing user custom indicators with their editable params."""
+    from indicator_registry import extract_editable_params
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT name, expression FROM indicators WHERE is_builtin = 0 OR is_builtin IS NULL")
+        rows = cur.fetchall()
+        conn.close()
+    except Exception:
+        return ""
+
+    lines = []
+    for r in rows:
+        raw  = r["expression"] if isinstance(r, dict) else r[1]
+        name = r["name"]       if isinstance(r, dict) else r[0]
+        try:
+            expr_data = json.loads(raw or "{}")
+        except (json.JSONDecodeError, TypeError):
+            expr_data = {}
+        desc       = (expr_data.get("description") or "").strip()
+        expr_tree  = expr_data.get("expr")
+        params     = extract_editable_params(expr_tree) if expr_tree else []
+        param_str  = ""
+        if params:
+            param_str = " | params: " + ", ".join(
+                f'{p["path"]}={p["default_value"]}' for p in params
+            )
+        if desc or params:
+            lines.append(f'- "{name}": {desc}{param_str}')
+
+    if not lines:
+        return ""
+
+    return (
+        "\n\n## User's Custom Indicators\n"
+        'Reference with {"type": "custom", "name": "IndicatorName"}.\n'
+        'To override parameter values, add an "overrides" dict keyed by the param path shown above:\n'
+        '  {"type": "custom", "name": "RSI Oversold", "overrides": {"cond_right": 25, "cond_left.operand.period": 10}}\n'
+        'If the user specifies custom values in their message, use them as overrides. '
+        'If unspecified, omit overrides (defaults will be used).\n\n'
+        + "\n".join(lines)
+    )
+
+
+def _auto_populate_overrides(strategy: dict) -> None:
+    """For any custom indicator operand with no overrides, fill in the indicator's defaults.
+
+    This makes every generated strategy self-documenting: the JSON shows the exact
+    parameter values in use, and the StrategyBuilder CustomOperandPanel can display them.
+    """
+    from indicator_registry import INDICATOR_REGISTRY
+    for rule in strategy.get("rules", []):
+        for cond in rule.get("conditions", []):
+            if not isinstance(cond, dict):
+                continue
+            for side in ("left", "right"):
+                op = cond.get(side)
+                if not isinstance(op, dict) or op.get("type") != "custom":
+                    continue
+                defn = INDICATOR_REGISTRY.get(op.get("name", ""))
+                if defn is None:
+                    continue
+                defaults   = {p["path"]: p["default_value"] for p in defn.editable_params}
+                existing   = op.get("overrides") or {}
+                # Existing (AI-set) overrides take priority; fill the rest with defaults
+                op["overrides"] = {**defaults, **existing}
+
+
 @app.post("/ai/build-strategy", response_model=AIStrategyResponse)
 def ai_build_strategy(request: AIStrategyRequest) -> AIStrategyResponse:
     """
     Generate a trading strategy from natural language description.
-    
+
     Reads LLM provider configuration (API key, model, provider) from database.
     Supports: Anthropic, OpenAI, Grok, Google Gemini.
-    
+
     Example prompt:
-    "Create a moving average crossover strategy. Buy when 20-period SMA crosses 
+    "Create a moving average crossover strategy. Buy when 20-period SMA crosses
      above 50-period SMA. Sell when it crosses back below. Use 1.0 quantity per trade."
     """
     try:
         provider = get_ai_provider_with_password(request.password)
-        
+
+        extra_ctx = _get_custom_indicator_context()
         strategy = provider.build_from_prompt(
             user_prompt=request.prompt,
-            temperature=request.temperature
+            temperature=request.temperature,
+            extra_system_context=extra_ctx,
         )
         
         # Validate the generated strategy
         is_valid, warnings = provider.validate_strategy(strategy)
-        
+
         if not is_valid:
             raise HTTPException(
                 422,
                 f"AI generated invalid strategy: {warnings[0] if warnings else 'Unknown error'}"
             )
-        
+
+        # Auto-fill default overrides for any custom indicator operands the AI left bare
+        _auto_populate_overrides(strategy)
+
         return AIStrategyResponse(
             name=strategy.get("name", "AI-Generated Strategy"),
             rules=strategy.get("rules", []),
@@ -883,7 +987,10 @@ async def _av_fetch(client, api_key, ticker, timeframe):
         for dt, vals in sorted(series.items()):
             close = float(vals.get("5. adjusted close") or vals.get("4. close", 0))
             open_ = float(vals.get("1. open", close))
-            rows.append({"timestamp": dt, "open": open_, "bid": close, "ask": close,
+            high_ = float(vals.get("2. high", close))
+            low_  = float(vals.get("3. low", close))
+            rows.append({"timestamp": dt, "open": open_, "high": high_, "low": low_,
+                          "bid": close, "ask": close,
                           "volume": float(vals.get("6. volume", 0)), "symbol": ticker})
         return rows
     else:
@@ -904,7 +1011,10 @@ async def _av_fetch(client, api_key, ticker, timeframe):
         for dt, vals in sorted(series.items()):
             close = float(vals.get("4. close", 0))
             open_ = float(vals.get("1. open", close))
-            rows.append({"timestamp": dt, "open": open_, "bid": close, "ask": close,
+            high_ = float(vals.get("2. high", close))
+            low_  = float(vals.get("3. low", close))
+            rows.append({"timestamp": dt, "open": open_, "high": high_, "low": low_,
+                          "bid": close, "ask": close,
                           "volume": float(vals.get("5. volume", 0)), "symbol": ticker})
         return rows
 
@@ -931,7 +1041,10 @@ async def _polygon_fetch(client, api_key, ticker, start_date, end_date, timefram
         ts = _dt.datetime.utcfromtimestamp(bar["t"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
         c = float(bar.get("c", 0))
         o = float(bar.get("o", c))
-        rows.append({"timestamp": ts, "open": o, "bid": c, "ask": c,
+        h = float(bar.get("h", c))
+        l = float(bar.get("l", c))
+        rows.append({"timestamp": ts, "open": o, "high": h, "low": l,
+                      "bid": c, "ask": c,
                       "volume": float(bar.get("v", 0)), "symbol": ticker})
     return rows
 
@@ -963,14 +1076,19 @@ async def _yahoo_fetch(client, ticker, start_date, end_date, timeframe):
     quote = result.get("indicators", {}).get("quote", [{}])[0]
     closes  = quote.get("close", [])
     opens   = quote.get("open", [])
+    highs   = quote.get("high", [])
+    lows    = quote.get("low", [])
     volumes = quote.get("volume", [])
     rows = []
     for i, (ts, c, v) in enumerate(zip(timestamps, closes, volumes)):
         if c is None:
             continue
         o = opens[i] if i < len(opens) and opens[i] is not None else c
+        h = highs[i] if i < len(highs) and highs[i] is not None else c
+        l = lows[i] if i < len(lows) and lows[i] is not None else c
         dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-        rows.append({"timestamp": dt_str, "open": float(o), "bid": float(c), "ask": float(c),
+        rows.append({"timestamp": dt_str, "open": float(o), "high": float(h), "low": float(l),
+                      "bid": float(c), "ask": float(c),
                       "volume": float(v or 0), "symbol": ticker})
     return rows
 
@@ -992,11 +1110,16 @@ async def _finnhub_fetch(client, api_key, ticker, start_date, end_date, timefram
     if j.get("s") == "no_data":
         raise HTTPException(404, f"No data returned by Finnhub for {ticker}.")
     opens = j.get("o", [])
+    highs = j.get("h", [])
+    lows  = j.get("l", [])
     rows = []
     for i, (ts, c, v) in enumerate(zip(j.get("t", []), j.get("c", []), j.get("v", []))):
         o = opens[i] if i < len(opens) else c
+        h = highs[i] if i < len(highs) else c
+        l = lows[i] if i < len(lows) else c
         dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-        rows.append({"timestamp": dt_str, "open": float(o), "bid": float(c), "ask": float(c),
+        rows.append({"timestamp": dt_str, "open": float(o), "high": float(h), "low": float(l),
+                      "bid": float(c), "ask": float(c),
                       "volume": float(v or 0), "symbol": ticker})
     return rows
 
@@ -1015,7 +1138,10 @@ async def _iex_fetch(client, api_key, ticker, timeframe):
         ts = b.get("date", "") + (" " + b.get("minute", "") if b.get("minute") else "")
         c  = float(b.get("close") or b.get("average") or 0)
         o  = float(b.get("open") or c)
-        rows.append({"timestamp": ts.strip(), "open": o, "bid": c, "ask": c,
+        h  = float(b.get("high") or c)
+        l  = float(b.get("low") or c)
+        rows.append({"timestamp": ts.strip(), "open": o, "high": h, "low": l,
+                      "bid": c, "ask": c,
                       "volume": float(b.get("volume") or 0), "symbol": ticker})
     return rows
 
@@ -1042,7 +1168,10 @@ async def _massive_fetch(client, api_key, ticker, start_date, end_date, timefram
         ts = _dt.datetime.utcfromtimestamp(bar["t"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
         c = float(bar.get("c", 0))
         o = float(bar.get("o", c))
-        rows.append({"timestamp": ts, "open": o, "bid": c, "ask": c,
+        h = float(bar.get("h", c))
+        l = float(bar.get("l", c))
+        rows.append({"timestamp": ts, "open": o, "high": h, "low": l,
+                      "bid": c, "ask": c,
                       "volume": float(bar.get("v", 0)), "symbol": ticker})
     return rows
 
@@ -1209,7 +1338,7 @@ def keys_decrypt(payload: Dict[str, str]):
 def db_get_strategies():
     conn = get_db_conn()
     cur  = conn.cursor()
-    cur.execute("SELECT id, name, logic, config FROM strategies ORDER BY id")
+    cur.execute("SELECT id, name, logic, config, is_builtin FROM strategies ORDER BY id")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return {"strategies": rows}
@@ -1220,20 +1349,58 @@ def db_post_strategies(payload: Dict[str, List[Dict[str, Any]]]):
     arr = payload.get("strategies", [])
     conn = get_db_conn()
     cur  = conn.cursor()
-    cur.execute("DELETE FROM strategies")
     for s in arr:
         config_val = s.get("config")
         if isinstance(config_val, dict):
             config_val = json.dumps(config_val)
         elif config_val is None:
             config_val = "{}"
-        cur.execute(
-            "INSERT INTO strategies (id, name, logic, config) VALUES (?, ?, ?, ?)",
-            (s.get("id"), s.get("name", ""), s.get("logic", ""), config_val),
-        )
+        name = s.get("name", "")
+        logic = s.get("logic", "")
+        sid = s.get("id")
+        if sid:
+            # Update existing strategy by id
+            cur.execute(
+                "UPDATE strategies SET name=?, logic=?, config=? WHERE id=?",
+                (name, logic, config_val, sid),
+            )
+            if cur.rowcount == 0:
+                cur.execute(
+                    "INSERT INTO strategies (id, name, logic, config) VALUES (?, ?, ?, ?)",
+                    (sid, name, logic, config_val),
+                )
+        else:
+            # Upsert by name
+            cur.execute("SELECT id FROM strategies WHERE name=?", (name,))
+            existing = cur.fetchone()
+            if existing:
+                cur.execute(
+                    "UPDATE strategies SET logic=?, config=? WHERE id=?",
+                    (logic, config_val, existing["id"]),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO strategies (name, logic, config) VALUES (?, ?, ?)",
+                    (name, logic, config_val),
+                )
     conn.commit()
     conn.close()
     return {"status": "ok", "count": len(arr)}
+
+
+@app.delete("/db/strategies/{strategy_id}")
+def db_delete_strategy(strategy_id: int):
+    conn = get_db_conn()
+    cur  = conn.cursor()
+    cur.execute("SELECT is_builtin FROM strategies WHERE id = ?", (strategy_id,))
+    row = cur.fetchone()
+    if row and row["is_builtin"]:
+        conn.close()
+        raise HTTPException(403, "Cannot delete a built-in strategy")
+    cur.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
 
 
 # ── Indicator DB ──────────────────────────────────────────────────────────────
@@ -1287,6 +1454,7 @@ def db_post_indicators(payload: Dict[str, List[Dict[str, Any]]]):
         )
     conn.commit()
     conn.close()
+    _reload_indicator_registry()
     return {"status": "ok", "count": len(arr)}
 
 

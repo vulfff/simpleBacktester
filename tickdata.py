@@ -9,6 +9,8 @@ class TickData:
     volume: float = 0.0
     time: datetime = field(default_factory=datetime.now)
     open: float = 0.0   # bar open price; used for next-bar-open fill execution
+    high: float = 0.0   # bar high; falls back to bid when not in CSV
+    low: float = 0.0    # bar low;  falls back to bid when not in CSV
 
     def __repr__(self) -> str:
         return (

@@ -128,13 +128,12 @@ class BacktestEngine:
             elif self.portfolio.cash <= 0:
                 blocked = True
 
-        if not blocked:
-            self._signal_log.append({
-                "t":       tick_time,
-                "symbol":  event.symbol,
-                "action":  event.action,
-                "blocked": blocked,
-            })
+        self._signal_log.append({
+            "t":       tick_time,
+            "symbol":  event.symbol,
+            "action":  event.action,
+            "blocked": blocked,
+        })
         status = "BLOCKED" if blocked else "SIGNAL"
         self._dbg(f"[{status}] {tick_time} | {event.symbol} {event.action.upper()}")
 

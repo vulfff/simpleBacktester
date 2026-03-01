@@ -38,14 +38,18 @@ class StrategySchema:
 
     # Available operand types
     OPERAND_TYPES = [
-        "price",        # Current price (bid, ask, mid, volume)
-        "lookback",     # Price N bars ago
-        "sma",          # Simple moving average
-        "ema",          # Exponential moving average
-        "rsi",          # Relative strength index
-        "macd",         # MACD indicator
-        "bollinger",    # Bollinger bands
-        "constant"      # Fixed number
+        "price",          # Current price (bid, ask, mid, high, low, volume)
+        "lookback",       # Price N bars ago
+        "sma",            # Simple moving average
+        "ema",            # Exponential moving average
+        "rsi",            # Relative strength index
+        "macd",           # MACD indicator
+        "bollinger",      # Bollinger bands
+        "highest_high",   # Rolling max of a field over N bars (field, period)
+        "lowest_low",     # Rolling min of a field over N bars (field, period)
+        "atr",            # Average True Range (period)
+        "typical_price",  # (High + Low + Close) / 3, no params
+        "constant"        # Fixed number
     ]
 
     # Available operators for conditions
@@ -69,7 +73,7 @@ class StrategySchema:
     ]
 
     # Price fields
-    PRICE_FIELDS = ["bid", "ask", "mid", "volume"]
+    PRICE_FIELDS = ["bid", "ask", "mid", "high", "low", "volume"]
 
     # Exit condition types
     EXIT_CONDITION_TYPES = [
@@ -99,6 +103,14 @@ SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowled
 - `rsi`: Relative strength index 0-100 (configurable period, default 14)
 - `macd`: MACD indicator (configurable fast/slow/signal periods)
 - `bollinger`: Bollinger bands (configurable period, std_dev, components: upper/middle/lower)
+- `time_of_day`: Current bar time as minutes since midnight (0–1439). Compare to a constant: {"type":"constant","value":570} = 09:30, {"type":"constant","value":585} = 09:45, {"type":"constant","value":960} = 16:00
+- `custom`: A user-defined custom indicator by name.
+  Basic use: `{"type": "custom", "name": "IndicatorName"}`
+  With parameter overrides: `{"type": "custom", "name": "IndicatorName", "overrides": {"path": value, ...}}`
+  Override keys are dot-separated paths into the indicator's expression tree (listed per indicator below).
+  Common paths: `"cond_right"` = threshold value, `"cond_left.operand.period"` = the operand period inside a comparison.
+  **If the user specifies custom values for an indicator's parameters, set them in "overrides".**
+  If the user does not specify values, omit "overrides" entirely (defaults will be auto-filled).
 
 ### Operators
 - `>`, `<`, `>=`, `<=`, `==`, `!=`: For numeric comparisons
@@ -119,7 +131,7 @@ Exit conditions are placed in the conditions array with `kind: "exit_condition"`
 - `stop_loss_abs`: Exit when absolute loss reaches $X
 - `bars_held`: Exit after holding for N bars/candles
 - `time_of_day`: Exit at specific hour (0-23)
-- `day_of_week`: Exit on specific day (0=Sunday to 6=Saturday)
+- `day_of_week`: Exit on specific day (ISO weekday: 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday)
 
 ### Price Fields
 bid, ask, mid, volume
@@ -289,6 +301,18 @@ Exit: Sell when RSI rises above 70 (overbought) OR after 10 bars
 }
 ```
 
+### Using a Custom Indicator With Overrides
+If the user has a custom indicator "RSI Oversold" (default: RSI period 14, threshold 30) and asks to use it with period 10 and threshold 25:
+
+```json
+{
+  "kind": "signal",
+  "left": { "type": "custom", "name": "RSI Oversold", "overrides": { "cond_right": 25, "cond_left.operand.period": 10 } },
+  "operator": ">",
+  "right": { "type": "constant", "value": 0 }
+}
+```
+
 ## Important Rules
 
 1. **Every entry rule should have a corresponding exit rule** (entry_long needs exit_long, entry_short needs exit_short)
@@ -332,11 +356,11 @@ class AIProvider(ABC):
 
     # ── Public: strategy builder convenience ─────────────────────────────────
 
-    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
+    def build_from_prompt(self, user_prompt: str, temperature: float = 0.7, extra_system_context: str = "") -> Dict[str, Any]:
         """Convert natural language to strategy JSON."""
         text = self._call_api(
             user_prompt=f"Create a trading strategy from this description:\n\n{user_prompt}",
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=SYSTEM_PROMPT + extra_system_context,
             temperature=temperature,
         )
         return self._parse_response(text)
@@ -467,7 +491,14 @@ class AIProvider(ABC):
                     return False, [f"Rule missing required field: {field}"]
             role = rule.get("role")
             role_counts[role] = role_counts.get(role, 0) + 1
-            if not isinstance(rule["conditions"], list) or not rule["conditions"]:
+            if not isinstance(rule["conditions"], list):
+                return False, [f"Rule '{rule['name']}' conditions must be a list"]
+            # Allow empty conditions if the rule has exit conditions
+            has_exit_conds = any(
+                isinstance(c, dict) and c.get("kind") == "exit_condition"
+                for c in rule["conditions"]
+            )
+            if not rule["conditions"] and not has_exit_conds:
                 return False, [f"Rule '{rule['name']}' must have at least one condition"]
 
         # Warnings for missing exit rules

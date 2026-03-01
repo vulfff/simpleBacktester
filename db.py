@@ -122,6 +122,12 @@ def create_tables() -> None:
     except Exception:
         pass  # column already exists
 
+    # Idempotent migration: add is_builtin to strategies
+    try:
+        cur.execute("ALTER TABLE strategies ADD COLUMN is_builtin INTEGER DEFAULT 0")
+    except Exception:
+        pass  # column already exists
+
     # ── Migrate from legacy api_keys table ────────────────────────────────────
     try:
         cur.execute("SELECT service, model_name, data_key, model_key, protected FROM api_keys LIMIT 1")

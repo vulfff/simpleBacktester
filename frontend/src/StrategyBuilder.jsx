@@ -3,6 +3,58 @@ import { AIStrategyChat } from './AIStrategyChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+// ─── Time helpers ─────────────────────────────────────────────────────────────
+const minutesToTime = m => {
+  const h = Math.floor(m / 60), min = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+const timeToMinutes = s => {
+  const [h, m] = (s || '00:00').split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+
+// ─── Custom indicator expression tree helpers ─────────────────────────────────
+const _pfx = (path, key) => path ? `${path}.${key}` : key;
+const _PATH_LABELS = { cond_right: 'Threshold', cond_left: 'Left value', then: 'True value', 'else_': 'False value', lo: 'Min', hi: 'Max', value: 'Value', left: 'Left operand', right: 'Right operand' };
+const _labelFromPath = path => {
+  if (!path) return 'Value';
+  const last = path.split('.').pop();
+  return _PATH_LABELS[last] || last.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+const _OPERAND_NUMERIC_PARAMS = ['period', 'fast', 'slow', 'signal', 'std_dev'];
+
+function getEditableParams(expr, path = '') {
+  const kind = expr?.node;
+  const results = [];
+  if (kind === 'const') {
+    const k = path || 'value';
+    results.push({ path: k, label: _labelFromPath(path), defaultValue: Number(expr.value), paramType: 'float' });
+  } else if (kind === 'operand') {
+    const op = expr.operand || {};
+    const opType = (op.type || 'operand').toUpperCase();
+    for (const param of _OPERAND_NUMERIC_PARAMS) {
+      if (param in op) {
+        results.push({ path: _pfx(path, `operand.${param}`), label: `${opType} ${param.replace(/_/g, ' ')}`, defaultValue: Number(op[param]), paramType: param === 'std_dev' ? 'float' : 'int' });
+      }
+    }
+  } else if (kind === 'binop') {
+    results.push(...getEditableParams(expr.left,  _pfx(path, 'left')));
+    results.push(...getEditableParams(expr.right, _pfx(path, 'right')));
+  } else if (kind === 'unop') {
+    results.push(...getEditableParams(expr.operand, _pfx(path, 'operand')));
+  } else if (kind === 'clamp') {
+    results.push(...getEditableParams(expr.value, _pfx(path, 'value')));
+    results.push(...getEditableParams(expr.lo,    _pfx(path, 'lo')));
+    results.push(...getEditableParams(expr.hi,    _pfx(path, 'hi')));
+  } else if (kind === 'ifelse') {
+    results.push(...getEditableParams(expr.cond_left,  _pfx(path, 'cond_left')));
+    results.push(...getEditableParams(expr.cond_right, _pfx(path, 'cond_right')));
+    results.push(...getEditableParams(expr.then,       _pfx(path, 'then')));
+    results.push(...getEditableParams(expr['else_'],   _pfx(path, 'else_')));
+  }
+  return results;
+}
+
 // ─── Signal preset blocks ─────────────────────────────────────────────────────
 const SIGNAL_BLOCKS = [
   {
@@ -75,6 +127,16 @@ const SIGNAL_BLOCKS = [
         left: { type: 'price', field: 'volume' }, operator: '>', right: { type: 'sma', field: 'volume', period: 20 } },
     ]
   },
+  {
+    category: "Time-Based Signals",
+    color: "#818cf8",
+    items: [
+      { id: 'after_time',  emoji: '⏰', label: 'After a specific time',  desc: 'Signal fires only at or after this time of day (UTC)',
+        left: { type: 'time_of_day' }, operator: '>=', right: { type: 'constant', value: 570 } },
+      { id: 'before_time', emoji: '⌚', label: 'Before a specific time', desc: 'Signal fires only before this time of day (UTC)',
+        left: { type: 'time_of_day' }, operator: '<',  right: { type: 'constant', value: 960 } },
+    ]
+  },
 ];
 
 const EXIT_BLOCKS = [
@@ -101,12 +163,12 @@ const EXIT_BLOCKS = [
       { id: 'time_of_day', emoji: '🕐', label: 'At a specific hour (UTC)',     desc: 'Trigger at a certain hour of the day (0-23)',
         kind: 'exit_condition', exitType: 'time_of_day', value: 16 },
       { id: 'day_of_week', emoji: '📅', label: 'On a specific day of the week', desc: 'Trigger only on Mon / Tue / etc.',
-        kind: 'exit_condition', exitType: 'day_of_week', value: 5 },
+        kind: 'exit_condition', exitType: 'day_of_week', value: 5 }, // ISO: 5=Friday
     ]
   },
 ];
 
-const DOW = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DOW = [null,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']; // ISO weekday: 1=Mon..7=Sun
 
 const ROLES = [
   { value: 'entry_long',  label: '🟢 Buy (Enter Long)',   color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)'  },
@@ -189,26 +251,35 @@ function inflateStrategyConfig(configStr) {
 
 const iStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', width: 75, outline: 'none' };
 const sStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', outline: 'none' };
-const PRICE_FIELDS = ['bid','ask','mid','volume'];
+const PRICE_FIELDS = ['bid','ask','mid','high','low','volume'];
 
-function OperandEditor({ operand, onChange, label }) {
-  const TYPES = ['price','lookback','sma','ema','rsi','macd','bollinger','constant'];
-  const TYPE_LABELS = { price:'Current Price', lookback:'Price N bars ago', sma:'SMA', ema:'EMA (Fast Average)', rsi:'RSI (0-100)', macd:'MACD', bollinger:'Bollinger Band', constant:'Fixed Number' };
+function OperandEditor({ operand, onChange, label, isTimeSide }) {
+  const TYPES = ['price','lookback','sma','ema','rsi','macd','bollinger','highest_high','lowest_low','atr','typical_price','time_of_day','constant'];
+  const TYPE_LABELS = { price:'Current Price', lookback:'Price N bars ago', sma:'SMA', ema:'EMA (Fast Average)', rsi:'RSI (0-100)', macd:'MACD', bollinger:'Bollinger Band', highest_high:'Highest High', lowest_low:'Lowest Low', atr:'ATR', typical_price:'Typical Price', time_of_day:'Time of Day', constant:'Fixed Number' };
   const set = (k, v) => onChange({ ...operand, [k]: v });
   return (
     <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
       <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <select value={operand?.type || 'price'} style={sStyle} onChange={e => onChange({ type: e.target.value, field: 'mid', period: 14, value: 0 })}>
+        <select value={operand?.type || 'price'} style={sStyle} onChange={e => {
+          const t = e.target.value;
+          const defaults = { type: t, field: t === 'highest_high' ? 'high' : t === 'lowest_low' ? 'low' : 'mid', period: t === 'bollinger' ? 20 : 14, value: 0, ...(t === 'bollinger' ? { std_dev: 2, component: 'upper' } : {}), ...(t === 'macd' ? { fast: 12, slow: 26, signal: 9, component: 'macd' } : {}) };
+          onChange(defaults);
+        }}>
           {TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </select>
-        {operand?.type === 'constant' && <input type="number" value={operand.value ?? 0} style={iStyle} onChange={e => set('value', parseFloat(e.target.value) || 0)} />}
-        {['price','lookback','sma','ema','rsi','bollinger'].includes(operand?.type) && (
+        {operand?.type === 'constant' && !isTimeSide && <input type="number" value={operand.value ?? 0} style={iStyle} onChange={e => set('value', parseFloat(e.target.value) || 0)} />}
+        {operand?.type === 'constant' && isTimeSide && (
+          <input type="time" value={minutesToTime(operand.value ?? 0)} style={{ ...iStyle, width: 90 }}
+            onChange={e => set('value', timeToMinutes(e.target.value))} />
+        )}
+        {operand?.type === 'time_of_day' && <span style={{ fontSize: '0.74rem', color: '#818cf8' }}>minutes since midnight</span>}
+        {['price','lookback','sma','ema','rsi','bollinger','highest_high','lowest_low'].includes(operand?.type) && (
           <select value={operand.field || 'mid'} style={sStyle} onChange={e => set('field', e.target.value)}>
             {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
           </select>
         )}
-        {['lookback','sma','ema','rsi'].includes(operand?.type) && (
+        {['lookback','sma','ema','rsi','highest_high','lowest_low','atr'].includes(operand?.type) && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{operand.type === 'lookback' ? 'bars ago:' : 'period:'}</span>
             <input type="number" value={operand.period || 14} min={1} style={iStyle} onChange={e => set('period', parseInt(e.target.value) || 1)} />
@@ -259,7 +330,7 @@ function ExitConditionEditor({ cond, onChange }) {
       <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{meta.pre}</span>
       {meta.isDow ? (
         <select value={cond.value} style={sStyle} onChange={e => onChange({ ...cond, value: parseInt(e.target.value) })}>
-          {DOW.map((d, i) => <option key={i} value={i}>{d}</option>)}
+          {DOW.map((d, i) => d && <option key={i} value={i}>{d}</option>)}
         </select>
       ) : (
         <input type="number" value={cond.value} min={meta.min} max={meta.max} step={meta.step} style={{ ...iStyle, width: 90 }}
@@ -270,20 +341,66 @@ function ExitConditionEditor({ cond, onChange }) {
   );
 }
 
-function ConditionCard({ cond, onChange, onRemove, total, showCombiner }) {
+function CustomOperandPanel({ operand, onChange, customIndicators }) {
+  const ind = customIndicators.find(i => i.name === operand.name);
+  const params = ind ? getEditableParams(ind.expr?.expr) : [];
+  const overrides = operand.overrides || {};
+  return (
+    <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
+      <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 8 }}>Left side</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: params.length ? 10 : 0 }}>
+        <span style={{ fontSize: '0.9rem' }}>🔷</span>
+        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#22d3ee' }}>{operand.name}</span>
+        <span style={{ fontSize: '0.72rem', color: '#4b5563', marginLeft: 2 }}>custom indicator</span>
+      </div>
+      {params.length === 0 && (
+        <div style={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic' }}>No adjustable parameters</div>
+      )}
+      {params.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {params.map(p => (
+            <label key={p.path} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{p.label}:</span>
+              <input
+                type="number"
+                step={p.paramType === 'int' ? 1 : 0.01}
+                value={overrides[p.path] ?? p.defaultValue}
+                style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', width: 75, outline: 'none' }}
+                onChange={e => {
+                  const raw = e.target.value;
+                  const v = p.paramType === 'int' ? (parseInt(raw) || p.defaultValue) : (parseFloat(raw) || p.defaultValue);
+                  onChange({ ...operand, overrides: { ...overrides, [p.path]: v } });
+                }}
+              />
+              {overrides[p.path] !== undefined && overrides[p.path] !== p.defaultValue && (
+                <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>(default: {p.defaultValue})</span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIndicators }) {
   const [expanded, setExpanded] = useState(false);
   const allItems = [...SIGNAL_BLOCKS, ...EXIT_BLOCKS].flatMap(c => c.items);
   const template = allItems.find(i => i.id === cond.templateId);
   const catColor = template ? [...SIGNAL_BLOCKS, ...EXIT_BLOCKS].find(c => c.items.some(i => i.id === cond.templateId))?.color : '#6b7280';
 
-  const labelOp = (o) => {
+  const timeLeft  = cond.left?.type  === 'time_of_day';
+  const timeRight = cond.right?.type === 'time_of_day';
+
+  const labelOp = (o, isTimePaired) => {
     if (!o) return '?';
-    const m = { price: o=>`${o.field||'mid'} price`, lookback: o=>`${o.field||'mid'} ${o.period||1}b ago`, sma: o=>`SMA(${o.period||20})`, ema: o=>`EMA(${o.period||20})`, rsi: o=>`RSI(${o.period||14})`, macd: o=>`MACD ${o.component||''}`, bollinger: o=>`BB ${o.component||''}`, constant: o=>String(o.value??0) };
+    if (o.type === 'constant' && isTimePaired) return minutesToTime(o.value ?? 0);
+    const m = { price: o=>`${o.field||'mid'} price`, lookback: o=>`${o.field||'mid'} ${o.period||1}b ago`, sma: o=>`SMA(${o.period||20})`, ema: o=>`EMA(${o.period||20})`, rsi: o=>`RSI(${o.period||14})`, macd: o=>`MACD ${o.component||''}`, bollinger: o=>`BB ${o.component||''}`, highest_high: o=>`HH(${o.period||14})`, lowest_low: o=>`LL(${o.period||14})`, atr: o=>`ATR(${o.period||14})`, typical_price: ()=>'TypicalPrice', time_of_day: ()=>'⏰ Time', constant: o=>String(o.value??0), custom: o => { const ov = o.overrides && Object.keys(o.overrides).length; return `🔷 ${o.name||'?'}${ov ? ` (${ov} override${ov>1?'s':''})` : ''}`; } };
     return (m[o.type] || (() => o.type))(o);
   };
   const summary = cond.kind === 'exit_condition'
-    ? `${(cond.exitType||'').replace(/_/g,' ')} = ${cond.exitType === 'day_of_week' ? DOW[cond.value] : cond.value}`
-    : `${labelOp(cond.left)} ${OPERATORS.find(o=>o.value===cond.operator)?.label??cond.operator} ${labelOp(cond.right)}`;
+    ? `${(cond.exitType||'').replace(/_/g,' ')} = ${cond.exitType === 'day_of_week' ? (DOW[cond.value] || cond.value) : cond.value}`
+    : `${labelOp(cond.left, timeRight)} ${OPERATORS.find(o=>o.value===cond.operator)?.label??cond.operator} ${labelOp(cond.right, timeLeft)}`;
 
   return (
     <>
@@ -323,7 +440,10 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner }) {
               <ExitConditionEditor cond={cond} onChange={onChange} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <OperandEditor operand={cond.left}  onChange={v => onChange({ ...cond, left: v })}  label="Left side" />
+                {cond.left?.type === 'custom'
+                  ? <CustomOperandPanel operand={cond.left} onChange={v => onChange({ ...cond, left: v })} customIndicators={customIndicators} />
+                  : <OperandEditor operand={cond.left} onChange={v => onChange({ ...cond, left: v })} label="Left side" isTimeSide={timeRight} />
+                }
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
                   <select value={cond.operator} style={sStyle} onChange={e => onChange({ ...cond, operator: e.target.value })}>
@@ -331,7 +451,7 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner }) {
                   </select>
                   <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
                 </div>
-                <OperandEditor operand={cond.right} onChange={v => onChange({ ...cond, right: v })} label="Right side" />
+                <OperandEditor operand={cond.right} onChange={v => onChange({ ...cond, right: v })} label="Right side" isTimeSide={timeLeft} />
               </div>
             )}
           </div>
@@ -395,6 +515,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
             showCombiner={idx > 0}
             onChange={u => updateCond(cond._id, u)}
             onRemove={() => removeCond(cond._id)}
+            customIndicators={customIndicators}
           />
         ))}
 
@@ -503,7 +624,7 @@ export default function StrategyBuilder() {
   const [ruleSetName, setRuleSetName] = useState('My Strategy');
   const [rules, setRules]             = useState([defaultRule('entry_long'), defaultRule('exit_long')]);
   const [selectedRole, setSelectedRole] = useState('entry_long');
-  const [activeId, setActiveId]       = useState(rules[0]._id);
+  const [activeId, setActiveId]       = useState(() => rules[0]?._id ?? null);
   const [saving, setSaving]           = useState(false);
   const [showJson, setShowJson]       = useState(false);
   const [customIndicators, setCIs]    = useState([]);
@@ -512,24 +633,30 @@ export default function StrategyBuilder() {
   const [aiWarnings, setAiWarnings]   = useState([]);
   const [savedStrategies, setSavedStrategies] = useState([]);
   const [showLoad, setShowLoad]       = useState(false);
+  const [loadedStrategyId, setLoadedStrategyId] = useState(null);
+  const [loadedStrategyIsBuiltin, setLoadedStrategyIsBuiltin] = useState(false);
 
   useEffect(() => { fetch(`${API_BASE}/db/indicators`).then(r=>r.json()).then(d=>setCIs(d.indicators||[])).catch(()=>{}); }, []);
   useEffect(() => { fetch(`${API_BASE}/db/strategies`).then(r=>r.json()).then(d=>setSavedStrategies(d.strategies||[])).catch(()=>{}); }, []);
 
+  // Auto-correct selectedRole whenever rules change: if selectedRole has no rules but others do, switch to the first available role
+  useEffect(() => {
+    if (rules.length > 0 && !rules.some(r => r.role === selectedRole)) {
+      const first = rules[0];
+      setSelectedRole(first.role);
+      setActiveId(first._id);
+    }
+  }, [rules]);
+
   const addRule = (role = 'entry_long') => { const r = defaultRule(role); setRules(p=>[...p,r]); setActiveId(r._id); setSelectedRole(role); };
   const updateRule = useCallback(u => setRules(p => p.map(r => r._id===u._id?u:r)), []);
-  const deleteRule = id => { 
-    const rest = rules.filter(r=>r._id!==id); 
-    setRules(rest); 
-    if(activeId===id) {
-      // Set active to the first rule in the same role group, or first rule overall
-      const currentRole = rules.find(r=>r._id===id)?.role;
-      const sameRoleRules = rest.filter(r=>r.role===currentRole);
-      if(sameRoleRules.length > 0) {
-        setActiveId(sameRoleRules[0]._id);
-      } else {
-        setActiveId(rest[0]?._id ?? null);
-      }
+  const deleteRule = id => {
+    const rest = rules.filter(r => r._id !== id);
+    setRules(rest);
+    if (activeId === id) {
+      const currentRole = rules.find(r => r._id === id)?.role;
+      const sameRoleRules = rest.filter(r => r.role === currentRole);
+      setActiveId(sameRoleRules.length > 0 ? sameRoleRules[0]._id : (rest[0]?._id ?? null));
     }
   };
 
@@ -537,24 +664,46 @@ export default function StrategyBuilder() {
   const handleStrategyGenerated = (aiResult) => {
     setAiGeneratedStrategy(aiResult);
     setAiWarnings(aiResult.warnings || []);
-    // Convert AI-generated rules to our internal format
-    const convertedRules = (aiResult.rules || []).map(r => ({
+  };
+
+  const loadAiStrategyIntoBuilder = () => {
+    if (!aiGeneratedStrategy) return;
+    const convertedRules = (aiGeneratedStrategy.rules || []).map(r => ({
       _id: uid(),
       name: r.name,
       role: r.role,
-      conditions: (r.conditions || []).map(c => ({
-        _id: uid(),
-        ...c
-      })),
+      conditions: (r.conditions || []).map(c => ({ _id: uid(), ...c })),
       timing: r.timing || 'on_change',
       quantity: r.quantity || 1
     }));
     if (convertedRules.length > 0) {
       setRules(convertedRules);
+      setRuleSetName(aiGeneratedStrategy.name || 'AI Strategy');
       setActiveId(convertedRules[0]._id);
       setSelectedRole(convertedRules[0].role);
-      setMode('build');
     }
+    setMode('build');
+  };
+
+  const saveAiStrategy = async () => {
+    if (!aiGeneratedStrategy) return;
+    try {
+      const name = aiGeneratedStrategy.name || 'AI Strategy';
+      const aiPayload = { name, rules: aiGeneratedStrategy.rules || [] };
+      const aiConfigStr = JSON.stringify({ rule_set: aiPayload });
+      await fetch(`${API_BASE}/db/strategies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategies: [{ name, logic: 'rule_based', config: aiConfigStr }] })
+      });
+      const fullEntry = { name, logic: 'rule_based', config: { rule_set: aiPayload } };
+      setSavedStrategies(prev => {
+        const idx = prev.findIndex(s => s.name === name);
+        if (idx >= 0) { const next = [...prev]; next[idx] = fullEntry; return next; }
+        return [...prev, fullEntry];
+      });
+      alert('Strategy saved!');
+    } catch { alert('Failed to save.'); }
   };
 
   const payload = ruleSetToJson(ruleSetName, rules);
@@ -563,12 +712,21 @@ export default function StrategyBuilder() {
   const rulesForRole = rules.filter(r => r.role === selectedRole);
 
   const save = async () => {
+    if (rules.length === 0) {
+      if (loadedStrategyId && !loadedStrategyIsBuiltin) {
+        await deleteLoadedStrategy();
+      }
+      return;
+    }
     setSaving(true);
     try {
-      await fetch(`${API_BASE}/db/strategies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ strategies:[{ name:ruleSetName, logic:'rule_based', config:JSON.stringify({ rule_set:payload }) }] }) });
+      const configStr = JSON.stringify({ rule_set: payload });
+      await fetch(`${API_BASE}/db/strategies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ strategies:[{ name:ruleSetName, logic:'rule_based', config:configStr }] }) });
       setSavedStrategies(prev => {
-        const exists = prev.some(s => s.name === ruleSetName);
-        return exists ? prev : [...prev, { name: ruleSetName }];
+        const fullEntry = { name: ruleSetName, logic: 'rule_based', config: { rule_set: payload } };
+        const exists = prev.findIndex(s => s.name === ruleSetName);
+        if (exists >= 0) { const next = [...prev]; next[exists] = fullEntry; return next; }
+        return [...prev, fullEntry];
       });
       alert('Strategy saved!');
     } catch { alert('Failed to save.'); }
@@ -582,8 +740,21 @@ export default function StrategyBuilder() {
     setRules(inflated.rules);
     setActiveId(inflated.rules[0]._id);
     setSelectedRole(inflated.rules[0].role);
+    setLoadedStrategyId(s.id ?? null);
+    setLoadedStrategyIsBuiltin(!!s.is_builtin);
     setShowLoad(false);
     setMode('build');
+  };
+
+  const deleteLoadedStrategy = async () => {
+    if (!loadedStrategyId) return;
+    if (!window.confirm(`Delete "${ruleSetName}" from the database?`)) return;
+    await fetch(`${API_BASE}/db/strategies/${loadedStrategyId}`, { method: 'DELETE' });
+    setSavedStrategies(prev => prev.filter(s => s.id !== loadedStrategyId));
+    setLoadedStrategyId(null);
+    setLoadedStrategyIsBuiltin(false);
+    setRules([]);
+    setRuleSetName('My Strategy');
   };
 
   const roleGroups = [
@@ -634,11 +805,15 @@ export default function StrategyBuilder() {
                     ))}
                   </div>
                 )}
-                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#93c5fd', fontSize: '0.7rem', overflow: 'auto', maxHeight: 300 }}>
+                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#93c5fd', fontSize: '0.7rem', overflow: 'auto', maxHeight: 260 }}>
                   {JSON.stringify(aiGeneratedStrategy, null, 2)}
                 </pre>
                 <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
-                  onClick={() => setMode('build')}>
+                  onClick={saveAiStrategy}>
+                  Save Strategy
+                </button>
+                <button className="btn" style={{ marginTop: 8, width: '100%' }}
+                  onClick={loadAiStrategyIntoBuilder}>
                   Edit in Manual Builder
                 </button>
               </>
@@ -685,8 +860,15 @@ export default function StrategyBuilder() {
               )}
             </div>
 
-            <button type="button" className="btn btn-primary btn-pill" style={{ marginLeft: 'auto' }}
-              onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save Strategy'}</button>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {loadedStrategyId && !loadedStrategyIsBuiltin && (
+                <button type="button" className="btn btn-danger btn-pill" onClick={deleteLoadedStrategy}>
+                  🗑 Delete Strategy
+                </button>
+              )}
+              <button type="button" className="btn btn-primary btn-pill"
+                onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save Strategy'}</button>
+            </div>
           </div>
 
           {rules.length === 0 ? (
