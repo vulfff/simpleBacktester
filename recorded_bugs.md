@@ -58,8 +58,6 @@
 
 ## Cross-system / undefined
 
-1. Building more complex indicators is impossible. Building them in the frontend with the 'group' math blocks and adjusting indicator values leads them to being saved without them. When loading up the more complex indicator, the values will be lost, and the indicators stop working.
-
 ## Missing Prebuilt Indicators
 
 ### Can be added now (zero backend changes)
