@@ -1,45 +1,77 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import './App.css'
 import Backtest from './Backtest'
 import StrategyBuilder from './StrategyBuilder'
 import IndicatorBuilder from './IndicatorBuilder'
 import KeyManager from './KeyManager'
 import Analytics from './Analytics'
+import Analyzer from './Analyzer'
 
-const VIEWS = [
-  { id: 'backtest',   label: 'Backtest',          icon: '▶' },
-  { id: 'analytics',  label: 'Analytics',          icon: '📈' },
-  { id: 'strategy',   label: 'Strategy Builder',  icon: '⚙' },
-  { id: 'indicator',  label: 'Indicator Builder', icon: '📐' },
-  { id: 'keys',       label: 'Key Manager',       icon: '🔑' },
+const VIEW_IDS = [
+  { id: 'backtest',  tKey: 'nav.backtest',  icon: '▶' },
+  { id: 'analytics', tKey: 'nav.analytics', icon: '📈' },
+  { id: 'strategy',  tKey: 'nav.strategy',  icon: '⚙' },
+  { id: 'indicator', tKey: 'nav.indicator', icon: '📐' },
+  { id: 'analyzer',  tKey: 'nav.analyzer',  icon: '🔍' },
+  { id: 'keys',      tKey: 'nav.keys',      icon: '🔑' },
 ]
+
+const LANGS = ['en', 'et']
 
 export default function App() {
   const [view, setView] = useState('backtest')
-  // Analytics page needs wider content area
+  const { t, i18n } = useTranslation()
   const isWide = view === 'analytics'
+
+  function switchLang(lng) {
+    i18n.changeLanguage(lng)
+  }
+
   return (
     <div className="app-shell">
       <header className="app-topbar">
         <div className="app-logo">
           <div className="app-logo-mark">📊</div>
-          <span className="app-logo-text">Backtester</span>
+          <span className="app-logo-text">{t('app.title')}</span>
         </div>
         <nav className="app-nav">
-          {VIEWS.map(v => (
+          {VIEW_IDS.map(v => (
             <button key={v.id}
               className={`nav-btn${view === v.id ? ' active' : ''}`}
               onClick={() => setView(v.id)}>
-              <span style={{fontSize:'0.85rem'}}>{v.icon}</span>{v.label}
+              <span style={{fontSize:'0.85rem'}}>{v.icon}</span>{t(v.tKey)}
             </button>
           ))}
         </nav>
+        <div style={{ display: 'flex', gap: '4px', marginLeft: '12px', flexShrink: 0 }}>
+          {LANGS.map(lng => (
+            <button
+              key={lng}
+              onClick={() => switchLang(lng)}
+              style={{
+                padding: '3px 10px',
+                borderRadius: '999px',
+                border: '1px solid var(--border)',
+                background: i18n.language === lng ? 'var(--accent)' : 'transparent',
+                color: i18n.language === lng ? '#fff' : 'var(--fg, #ccc)',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                lineHeight: 1.4,
+              }}
+            >
+              {t(`lang.${lng}`)}
+            </button>
+          ))}
+        </div>
       </header>
       <main className="app-content fade-up" key={view} style={isWide ? { maxWidth: '1440px' } : {}}>
         {view === 'backtest'   && <Backtest   goTo={setView} />}
         {view === 'analytics'  && <Analytics  goTo={setView} />}
         {view === 'strategy'   && <StrategyBuilder />}
         {view === 'indicator'  && <IndicatorBuilder />}
+        {view === 'analyzer'   && <Analyzer />}
         {view === 'keys'       && <KeyManager />}
       </main>
     </div>

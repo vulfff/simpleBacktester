@@ -1,0 +1,17 @@
+{
+  "app": {
+    "title": "Tagatestimine"
+  },
+  "nav": {
+    "backtest": "Tagatestimine",
+    "analytics": "Analüütika",
+    "strategy": "Strateegiate Loomine",
+    "indicator": "Indikaatorite Loomine",
+    "analyzer": "Analüsaator",
+    "keys": "Võtmehaldus"
+  },
+  "lang": {
+    "en": "EN",
+    "et": "ET"
+  }
+}

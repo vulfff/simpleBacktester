@@ -1,0 +1,17 @@
+{
+  "app": {
+    "title": "Backtester"
+  },
+  "nav": {
+    "backtest": "Backtest",
+    "analytics": "Analytics",
+    "strategy": "Strategy Builder",
+    "indicator": "Indicator Builder",
+    "analyzer": "Analyzer",
+    "keys": "Key Manager"
+  },
+  "lang": {
+    "en": "EN",
+    "et": "ET"
+  }
+}
