@@ -469,6 +469,8 @@ INDICATORS = [
 # ── DB insertion ──────────────────────────────────────────────────────────────
 
 def seed():
+    import paths
+    paths.ensure_data_dir()
     conn = get_db_conn()
     cur  = conn.cursor()
 
