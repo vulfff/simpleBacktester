@@ -18,11 +18,16 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'backtester.db')
+import paths
+
+
+def _db_path() -> str:
+    paths.ensure_data_dir()
+    return str(paths.db_path())
 
 
 def get_db_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(_db_path(), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -330,7 +335,7 @@ def decrypt_with_password(password: str, stored: str) -> str:
 
 def ensure_db():
     """Ensure DB and tables exist. Safe to call at startup."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    paths.ensure_data_dir()
     create_tables()
 
 
@@ -531,6 +536,6 @@ def get_indicator(indicator_id: int) -> Optional[Dict[str, Any]]:
 
 if __name__ == '__main__':
     # simple CLI to inspect/create the DB
-    print('DB path:', DB_PATH)
+    print('DB path:', _db_path())
     create_tables()
     print('Tables created/verified.')

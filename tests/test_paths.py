@@ -46,3 +46,17 @@ def test_db_path_under_data_dir(tmp_path, monkeypatch):
 def test_logs_dir_under_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("BACKTESTER_DATA_DIR", str(tmp_path))
     assert paths.logs_dir() == tmp_path / "logs"
+
+
+def test_db_module_uses_paths(tmp_path, monkeypatch):
+    """db.get_db_conn() must open the DB at paths.db_path()."""
+    monkeypatch.setenv("BACKTESTER_DATA_DIR", str(tmp_path))
+
+    import importlib
+    import db
+    importlib.reload(db)
+    conn = db.get_db_conn()
+    try:
+        assert (tmp_path / "backtester.db").exists()
+    finally:
+        conn.close()
