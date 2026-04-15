@@ -1,1 +1,9 @@
-API_KEY
+API_KEY.txt
+__pycache__/
+*.pyc
+*.pyo
+backtester.db
+node_modules/
+frontend/dist/
+.env
+*.egg-info/

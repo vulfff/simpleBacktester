@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const API = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 const TFS = ['1m','5m','15m','30m','1h','4h','1d','1w','1M']
 
 // ── Ticker search combobox ─────────────────────────────────────────────────────
 function TickerSearch({ value, onChange, disabled }) {
+  const { t } = useTranslation()
   const [query, setQuery]       = useState(value)
   const [results, setResults]   = useState([])
   const [open, setOpen]         = useState(false)
@@ -67,7 +69,7 @@ function TickerSearch({ value, onChange, disabled }) {
           onChange={e => { const v = e.target.value.toUpperCase(); setQuery(v); onChange(v); search(v) }}
           onKeyDown={handleKey}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder={disabled ? 'Add a data API key to enable search' : 'Search ticker… (e.g. AAPL, BTC)'}
+          placeholder={disabled ? t('backtest.tickerDisabled') : t('backtest.tickerPlaceholder')}
           disabled={disabled}
           style={{ paddingRight: loading ? 32 : undefined }}
         />
@@ -122,6 +124,7 @@ function StatCard({ label, value, sub, color, emoji }) {
 }
 
 export default function Backtest({ goTo }) {
+  const { t } = useTranslation()
   const [method,     setMethod]     = useState('upload')
   const [file,       setFile]       = useState(null)
   const [ticker,     setTicker]     = useState('')
@@ -153,9 +156,8 @@ export default function Backtest({ goTo }) {
       if (arr.length) setSelId(arr[0].id)
     }).catch(()=>{})
 
-    fetch(`${API}/db/data-keys`).then(r=>r.json())
-      .then(d => setHasKey(!!(d.keys?.some(k => k.active))))
-      .catch(()=> setHasKey(false))
+    // Yahoo Finance is always available as a built-in fallback — API tab is always enabled
+    setHasKey(true)
   }, [])
 
   const selected = strategies.find(s => s.id === selId)
@@ -163,10 +165,10 @@ export default function Backtest({ goTo }) {
   const run = async e => {
     e.preventDefault()
     setError(''); setResult(null)
-    if (method==='upload' && !file)            return setError('Please select a CSV file.')
-    if (method==='api' && !ticker)             return setError('Please enter a ticker symbol.')
-    if (method==='api' && (!startDate||!endDate)) return setError('Please set start and end dates.')
-    if (!selected)                             return setError('No strategy selected. Build one first.')
+    if (method==='upload' && !file)            return setError(t('backtest.errSelectFile'))
+    if (method==='api' && !ticker)             return setError(t('backtest.errEnterTicker'))
+    if (method==='api' && (!startDate||!endDate)) return setError(t('backtest.errSetDates'))
+    if (!selected)                             return setError(t('backtest.errNoStrategy'))
     setLoading(true)
 
     try {
@@ -199,7 +201,7 @@ export default function Backtest({ goTo }) {
       }
 
       form.append('column_map', JSON.stringify({
-        time:'timestamp', bid:'bid', ask:'ask', volume:'volume', name:'symbol'
+        time:'timestamp', open:'open', high:'high', low:'low', close:'close', volume:'volume', name:'symbol'
       }))
       form.append('strategies', JSON.stringify([selected]))
       form.append('starting_cash', cash || '10000')
@@ -236,20 +238,9 @@ export default function Backtest({ goTo }) {
 
   return (
     <div className="view">
-      <h2>Backtest</h2>
-      <p>Run your strategy against historical data and see how it performs.</p>
+      <h2>{t('backtest.title')}</h2>
+      <p>{t('backtest.subtitle')}</p>
 
-      {/* API key warning */}
-      {hasKey === false && method === 'api' && (
-        <div className="alert alert-warn fade-up" style={{ marginBottom:14, cursor:'pointer' }}
-          onClick={() => goTo?.('keys')}>
-          <span>⚠️</span>
-          <div>
-            <strong>No data API key configured.</strong> You need a data provider key to
-            fetch live market data. <span style={{textDecoration:'underline'}}>Click to set one up →</span>
-          </div>
-        </div>
-      )}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <form onSubmit={run}>
@@ -257,17 +248,17 @@ export default function Backtest({ goTo }) {
           {/* ── Strategy selector ── */}
           <div style={{ marginBottom: 18 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-              <span className="field-label">Strategy</span>
+              <span className="field-label">{t('backtest.strategy')}</span>
               <button type="button" className="btn btn-ghost btn-sm"
-                onClick={() => goTo?.('strategy')}>Manage strategies →</button>
+                onClick={() => goTo?.('strategy')}>{t('backtest.manageStrategies')}</button>
             </div>
             {strategies.length === 0 ? (
               <div style={{ background:'rgba(124,134,247,0.07)', border:'1px dashed rgba(124,134,247,0.35)',
                 borderRadius:'var(--r)', padding:'20px', textAlign:'center' }}>
                 <div style={{ fontSize:'1.6rem', marginBottom:6 }}>🧩</div>
-                <p style={{ color:'var(--text-mute)', margin:'0 0 10px', fontSize:'0.86rem' }}>No strategies yet.</p>
+                <p style={{ color:'var(--text-mute)', margin:'0 0 10px', fontSize:'0.86rem' }}>{t('backtest.noStrategiesTitle')}</p>
                 <button type="button" className="btn btn-primary btn-sm btn-pill"
-                  onClick={() => goTo?.('strategy')}>Open Strategy Builder</button>
+                  onClick={() => goTo?.('strategy')}>{t('backtest.openStrategyBuilder')}</button>
               </div>
             ) : (
               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -281,7 +272,7 @@ export default function Backtest({ goTo }) {
                       border: s.id===selId ? '1px solid rgba(124,134,247,0.45)' : '1px solid var(--border)',
                       color: s.id===selId ? 'var(--accent2)' : 'var(--text-soft)',
                     }}>
-                    {s.name || `Strategy ${s.id}`}
+                    {s.name || t('backtest.strategyFallback', { id: s.id })}
                   </button>
                 ))}
               </div>
@@ -292,32 +283,32 @@ export default function Backtest({ goTo }) {
 
           {/* ── Data source ── */}
           <div style={{ marginBottom:16 }}>
-            <div className="field-label" style={{ marginBottom:8 }}>Data Source</div>
+            <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.dataSource')}</div>
             <div className="tab-strip" style={{ marginBottom:14, maxWidth:320 }}>
               <button type="button" className={`tab-btn${method==='upload'?' active':''}`}
-                onClick={() => setMethod('upload')}>📂 Upload CSV</button>
+                onClick={() => setMethod('upload')}>📂 {t('backtest.uploadCsv')}</button>
               <button type="button" className={`tab-btn${method==='api'?' active':''}`}
-                onClick={() => setMethod('api')}>🌐 Fetch from API</button>
+                onClick={() => setMethod('api')}>🌐 {t('backtest.fetchFromApi')}</button>
             </div>
 
             {method === 'upload' ? (
               <div className="grid-2">
                 <div className="field">
-                  <label className="field-label">CSV File</label>
+                  <label className="field-label">{t('backtest.csvFile')}</label>
                   <label className={`upload-zone${file?' has-file':''}`}>
                     <span style={{ fontSize:'1.1rem' }}>{file ? '✅' : '📁'}</span>
                     <span style={{ fontSize:'0.84rem', color: file?'var(--green)':'var(--text-mute)' }}>
-                      {file ? file.name : 'Click to select a CSV file'}
+                      {file ? file.name : t('backtest.clickToSelect')}
                     </span>
                     <input type="file" accept=".csv" style={{ display:'none' }}
                       onChange={e => setFile(e.target.files?.[0]||null)} />
                   </label>
                 </div>
                 <div className="field">
-                  <label className="field-label">Timeframe</label>
+                  <label className="field-label">{t('backtest.timeframe')}</label>
                   <select value={timeframe} onChange={e=>setTimeframe(e.target.value)}>
-                    <option value="">Auto-detect</option>
-                    {TFS.map(t=><option key={t}>{t}</option>)}
+                    <option value="">{t('backtest.autoDetect')}</option>
+                    {TFS.map(tf=><option key={tf}>{tf}</option>)}
                   </select>
                 </div>
               </div>
@@ -325,21 +316,21 @@ export default function Backtest({ goTo }) {
               <>
               <div className="grid-auto">
                 <div className="field">
-                  <label className="field-label">Ticker</label>
+                  <label className="field-label">{t('backtest.ticker')}</label>
                   <TickerSearch value={ticker} onChange={setTicker} disabled={!hasKey} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Start Date</label>
+                  <label className="field-label">{t('backtest.startDate')}</label>
                   <input type="datetime-local" value={startDate} onChange={e=>setStartDate(e.target.value)} />
                 </div>
                 <div className="field">
-                  <label className="field-label">End Date</label>
+                  <label className="field-label">{t('backtest.endDate')}</label>
                   <input type="datetime-local" value={endDate} onChange={e=>setEndDate(e.target.value)} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Timeframe</label>
+                  <label className="field-label">{t('backtest.timeframe')}</label>
                   <select value={timeframe} onChange={e=>setTimeframe(e.target.value)}>
-                    {TFS.map(t=><option key={t}>{t}</option>)}
+                    {TFS.map(tf=><option key={tf}>{tf}</option>)}
                   </select>
                 </div>
               </div>
@@ -348,13 +339,13 @@ export default function Backtest({ goTo }) {
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8 }}>
                   <span style={{ fontSize:'0.75rem', padding:'2px 10px', borderRadius:999,
                     background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399' }}>
-                    ⚡ {cachedBars.toLocaleString()} bars cached — no API call needed
+                    {t('backtest.barsCached', { count: cachedBars.toLocaleString() })}
                   </span>
                   <button type="button"
                     style={{ fontSize:'0.72rem', background:'transparent', border:'1px solid #334155',
                       borderRadius:6, color:'#6b7280', cursor:'pointer', padding:'2px 8px' }}
                     onClick={() => { dataCache.delete(currentKey); setFromCache(null) }}>
-                    ↺ Re-fetch
+                    {t('backtest.reFetch')}
                   </button>
                 </div>
               )}
@@ -365,7 +356,7 @@ export default function Backtest({ goTo }) {
           {/* ── Capital ── */}
           <div style={{ marginBottom:16, maxWidth:220 }}>
             <div className="field">
-              <label className="field-label">Starting Capital ($)</label>
+              <label className="field-label">{t('backtest.startingCapital')}</label>
               <input type="number" value={cash} min="0" step="100"
                 onChange={e=>setCash(e.target.value)} placeholder="10000" />
             </div>
@@ -381,7 +372,7 @@ export default function Backtest({ goTo }) {
                 alignItems:'center', gap:5, userSelect:'none',
               }}>
               <span style={{ fontSize:'0.7rem' }}>{showAdv ? '▾' : '▸'}</span>
-              Advanced Settings
+              {t('backtest.advancedSettings')}
             </button>
 
             {showAdv && (
@@ -393,9 +384,9 @@ export default function Backtest({ goTo }) {
 
                 {/* Position sizing */}
                 <div>
-                  <div className="field-label" style={{ marginBottom:8 }}>Position Sizing</div>
+                  <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.positionSizing')}</div>
                   <div style={{ display:'flex', gap:6, marginBottom: sizingMode==='all_in' ? 10 : 0 }}>
-                    {[['fixed','Fixed Qty'],['all_in','All-In']].map(([v,label]) => (
+                    {[['fixed', t('backtest.fixedQty')], ['all_in', t('backtest.allIn')]].map(([v,label]) => (
                       <button key={v} type="button"
                         onClick={() => setSizingMode(v)}
                         style={{
@@ -412,19 +403,18 @@ export default function Backtest({ goTo }) {
                   </div>
                   {sizingMode === 'fixed' && (
                     <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', marginTop:4 }}>
-                      Uses the quantity set in each strategy rule.
+                      {t('backtest.fixedQtyDesc')}
                     </div>
                   )}
                   {sizingMode === 'all_in' && (
                     <div style={{ display:'flex', alignItems:'center', gap:12 }}>
                       <div className="field" style={{ maxWidth:140, marginBottom:0 }}>
-                        <label className="field-label">Leverage</label>
+                        <label className="field-label">{t('backtest.leverage')}</label>
                         <input type="number" value={leverage} min="0.1" max="100" step="0.1"
                           onChange={e => setLeverage(e.target.value)} />
                       </div>
                       <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', paddingTop:18 }}>
-                        Buys with <strong style={{color:'var(--text-soft)'}}>cash × {leverage}x</strong> at each entry signal.
-                        Re-entry is blocked while a position is held.
+                        {t('backtest.allInDescPlain', { leverage })}
                       </div>
                     </div>
                   )}
@@ -432,13 +422,13 @@ export default function Backtest({ goTo }) {
 
                 {/* Commission */}
                 <div>
-                  <div className="field-label" style={{ marginBottom:8 }}>Commission Override</div>
+                  <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.commissionOverride')}</div>
                   <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                     <select value={commMode} onChange={e => setCommMode(e.target.value)}
                       style={{ maxWidth:160 }}>
-                      <option value="none">None (engine default)</option>
-                      <option value="pct">% of trade value</option>
-                      <option value="flat">Flat fee per fill ($)</option>
+                      <option value="none">{t('backtest.commNone')}</option>
+                      <option value="pct">{t('backtest.commPct')}</option>
+                      <option value="flat">{t('backtest.commFlat')}</option>
                     </select>
                     {commMode !== 'none' && (
                       <>
@@ -447,7 +437,7 @@ export default function Backtest({ goTo }) {
                           placeholder={commMode==='pct' ? '0.1' : '1.00'}
                           style={{ maxWidth:100 }} />
                         <span style={{ fontSize:'0.8rem', color:'var(--text-mute)' }}>
-                          {commMode === 'pct' ? '% per fill' : '$ per fill'}
+                          {commMode === 'pct' ? t('backtest.pctPerFill') : t('backtest.dollarPerFill')}
                         </span>
                       </>
                     )}
@@ -456,9 +446,9 @@ export default function Backtest({ goTo }) {
 
                 {/* Share Type */}
                 <div>
-                  <div className="field-label" style={{ marginBottom:8 }}>Share Type</div>
+                  <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.shareType')}</div>
                   <div style={{ display:'flex', gap:6 }}>
-                    {[[false,'Stocks & Futures'],[true,'Crypto']].map(([val, label]) => (
+                    {[[false, t('backtest.stocksFutures')], [true, t('backtest.crypto')]].map(([val, label]) => (
                       <button key={String(val)} type="button"
                         onClick={() => setAllowFractional(val)}
                         style={{
@@ -475,8 +465,8 @@ export default function Backtest({ goTo }) {
                   </div>
                   <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', marginTop:4 }}>
                     {allowFractional
-                      ? 'Fractional quantities allowed (BTC, ETH, etc.)'
-                      : 'Quantities floored to whole units; orders < 1 unit are skipped.'}
+                      ? t('backtest.fractionalDesc')
+                      : t('backtest.wholeUnitDesc')}
                   </div>
                 </div>
 
@@ -486,7 +476,7 @@ export default function Backtest({ goTo }) {
 
           <button type="submit" className="btn btn-primary btn-pill btn-lg"
             disabled={loading || strategies.length===0}>
-            {loading ? <><span className="spinner" /> Running…</> : '▶  Run Backtest'}
+            {loading ? <><span className="spinner" /> {t('backtest.running')}</> : t('backtest.runBacktest')}
           </button>
         </form>
 
@@ -505,13 +495,13 @@ export default function Backtest({ goTo }) {
             flexWrap:'wrap', gap:10, marginBottom:18 }}>
             <div>
               <div style={{ fontWeight:800, fontSize:'1.05rem', color:'var(--text)' }}>
-                Backtest Results
+                {t('backtest.results')}
               </div>
               <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', marginTop:2 }}>
                 {selected?.name} · {method==='api' ? ticker : file?.name}
-                {result.trades > 0 && <> · {result.trades} trade{result.trades!==1?'s':''}</>}
-                {fromCache === true  && <> · <span style={{ color:'#34d399' }}>⚡ cached data</span></>}
-                {fromCache === false && <> · <span style={{ color:'#60a5fa' }}>↓ fresh fetch</span></>}
+                {result.trades > 0 && <> · {t('backtest.tradeCount', { count: result.trades })}</>}
+                {fromCache === true  && <> · <span style={{ color:'#34d399' }}>{t('backtest.cachedData')}</span></>}
+                {fromCache === false && <> · <span style={{ color:'#60a5fa' }}>{t('backtest.freshFetch')}</span></>}
               </div>
             </div>
             <div style={{
@@ -529,13 +519,13 @@ export default function Backtest({ goTo }) {
 
           {/* stat cards */}
           <div className="grid-4" style={{ marginBottom:16 }}>
-            <StatCard emoji="💰" label="Final Value"    value={`$${fmt(result.total_value)}`}
-              sub={`Started $${fmt(startCash)}`} color={positive?'var(--green)':'var(--red)'} />
-            <StatCard emoji="🏦" label="Cash"           value={`$${fmt(result.cash)}`}
-              sub="Uninvested"    color="var(--accent)" />
-            <StatCard emoji="📊" label="Positions"      value={`$${fmt(result.asset_value)}`}
-              sub="Market value"  color="var(--accent2)" />
-            <StatCard emoji={positive?'📈':'📉'} label="P & L"
+            <StatCard emoji="💰" label={t('backtest.finalValue')}    value={`$${fmt(result.total_value)}`}
+              sub={t('backtest.started', { value: fmt(startCash) })} color={positive?'var(--green)':'var(--red)'} />
+            <StatCard emoji="🏦" label={t('backtest.cash')}           value={`$${fmt(result.cash)}`}
+              sub={t('backtest.uninvested')}    color="var(--accent)" />
+            <StatCard emoji="📊" label={t('backtest.positions')}      value={`$${fmt(result.asset_value)}`}
+              sub={t('backtest.marketValue')}  color="var(--accent2)" />
+            <StatCard emoji={positive?'📈':'📉'} label={t('backtest.pnl')}
               value={`${positive?'+':''}$${fmt(pnl)}`}
               sub={pnlPct} color={positive?'var(--green)':'var(--red)'} />
           </div>
@@ -550,7 +540,7 @@ export default function Backtest({ goTo }) {
           {/* positions */}
           {Object.keys(result.positions||{}).length > 0 && (
             <div style={{ marginBottom:14 }}>
-              <div className="field-label" style={{ marginBottom:8 }}>Open Positions</div>
+              <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.openPositions')}</div>
               {Object.entries(result.positions).map(([sym, qty]) => {
                 const px = result.last_prices?.[sym] ?? 0
                 const val = qty * px
@@ -568,7 +558,7 @@ export default function Backtest({ goTo }) {
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:700, fontSize:'0.88rem' }}>{sym}</div>
                       <div style={{ fontSize:'0.73rem', color:'var(--text-mute)' }}>
-                        {qty > 0 ? 'Long' : 'Short'} {Math.abs(qty)} @ ${fmt(px)}
+                        {qty > 0 ? t('backtest.long') : t('backtest.short')} {Math.abs(qty)} @ ${fmt(px)}
                       </div>
                     </div>
                     <div style={{ fontWeight:700, color: val>=0?'var(--green)':'var(--red)' }}>
@@ -582,7 +572,7 @@ export default function Backtest({ goTo }) {
 
           <details>
             <summary style={{ fontSize:'0.75rem', color:'var(--text-mute)', cursor:'pointer', userSelect:'none' }}>
-              Raw JSON
+              {t('common.rawJson')}
             </summary>
             <pre style={{ marginTop:8 }}>{JSON.stringify(result, null, 2)}</pre>
           </details>

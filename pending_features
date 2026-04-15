@@ -1,0 +1,42 @@
+# Pending Features
+
+## Indicators — Need New Backend Operands
+
+| Feature | Reason |
+|---------|--------|
+| Stochastic %D | Needs SMA/EMA of a computed expression output (smoothing chain) |
+| VWAP | Cumulative stateful — volume-weighted running sum |
+| ADX | Directional Movement (+DM/-DM) computation |
+| OBV | Cumulative stateful — On-Balance Volume |
+| MFI | Cumulative stateful — Money Flow Index |
+| Parabolic SAR | Recursive/stateful formula |
+| Ichimoku Cloud | Complex multi-component (Tenkan/Kijun/Senkou/Chikou) |
+| TRIX / Hull MA / DEMA / TEMA | EMA-of-EMA chaining (needs expression-output smoothing) |
+
+## Engine
+
+| Feature | Description |
+|---------|-------------|
+| Multi-symbol backtesting | Run a single strategy across a portfolio of tickers simultaneously |
+| Limit / stop orders | Currently only market orders; add limit/stop order types to the pending queue |
+| Walk-forward optimization | Split data into in-sample/out-of-sample windows, re-optimize parameters |
+| Monte Carlo simulation | Randomize trade order to estimate confidence intervals on metrics |
+
+## Frontend
+
+| Feature | Description |
+|---------|-------------|
+| Strategy parameter optimization | Grid/random search over indicator params with result heatmap |
+| Export results to CSV/PDF | Download equity curve, trade log, and metrics as files |
+| Dark/light theme toggle | Currently dark-only; add theme switcher using CSS variable swap |
+| Notification/toast system | Replace browser alerts with in-app toast notifications |
+| Mobile-responsive layout | Current layout breaks below ~900px width |
+
+## Infrastructure
+
+| Feature | Description |
+|---------|-------------|
+| Test suite | Unit tests for core modules (metrics, fill model, CSV parser, engine) |
+| CI pipeline | GitHub Actions for lint + test on push |
+| Docker compose | Single-command startup for backend + frontend |
+| API rate limiting | Throttle data provider calls to avoid hitting upstream limits |

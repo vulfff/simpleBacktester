@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -8,7 +9,6 @@ const DATA_PROVIDERS = [
   { id: 'massive',       label: 'Massive',        assets: 'Stocks · Crypto · Forex · Options', rateLimits: '5 req/min free · Unlimited paid', tier: 'Free + Paid', keyHint: 'Alphanumeric key from dashboard', url: 'https://massive.com/dashboard', desc: 'Comprehensive market data. Free key on sign-up — no credit card.' },
   { id: 'alpha-vantage', label: 'Alpha Vantage',  assets: 'Stocks · Forex · Crypto',           rateLimits: '25 req/day free · 500+/min paid',  tier: 'Free + Paid', keyHint: 'Alphanumeric key',                url: 'https://www.alphavantage.co/support/#api-key', desc: 'Solid free tier for US stocks, forex and crypto.' },
   { id: 'polygon',       label: 'Polygon.io',     assets: 'Stocks · Options · Crypto · Forex', rateLimits: '5 req/min free · Unlimited paid',  tier: 'Free + Paid', keyHint: 'Alphanumeric key',                url: 'https://polygon.io/dashboard/signup', desc: 'Deep US market data. Rebranded to Massive (see above).' },
-  { id: 'yahoo-finance', label: 'Yahoo Finance',  assets: 'Stocks · ETFs · Crypto',            rateLimits: 'Unofficial API — may throttle',    tier: 'Free (no key)', keyHint: 'No key needed — leave blank',  url: null, desc: 'No API key required. Good for quick backtests.' },
   { id: 'finnhub',       label: 'Finnhub',        assets: 'Stocks · Forex · Crypto',           rateLimits: '60 req/min free',                  tier: 'Free + Paid', keyHint: 'Alphanumeric key from dashboard', url: 'https://finnhub.io/register', desc: 'Real-time & historical data plus fundamentals.' },
   { id: 'iex-cloud',     label: 'IEX Cloud',      assets: 'Stocks · ETFs',                     rateLimits: '500K messages/mo free',            tier: 'Free + Paid', keyHint: 'Starts with pk_ or sk_',          url: 'https://iexcloud.io/cloud-login#/register', desc: 'High-quality US equity data.' },
 ];
@@ -63,7 +63,8 @@ function ActiveDot({ active }) {
   );
 }
 
-function KeyRow({ label, sublabel, active, onActivate, onDelete }) {
+function KeyRow({ label, sublabel, active, protected: isProtected, onActivate, onDelete }) {
+  const { t } = useTranslation()
   const [confirmDel, setConfirmDel] = useState(false);
   return (
     <div style={{
@@ -74,29 +75,42 @@ function KeyRow({ label, sublabel, active, onActivate, onDelete }) {
     }}>
       <ActiveDot active={active} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.87rem', fontWeight: 600, color: active ? '#e2e8f0' : '#94a3b8' }}>{label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: '0.87rem', fontWeight: 600, color: active ? '#e2e8f0' : '#94a3b8' }}>{label}</span>
+          {isProtected ? (
+            <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+              PW
+            </span>
+          ) : (
+            <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+              OS
+            </span>
+          )}
+        </div>
         {sublabel && <div style={{ fontSize: '0.72rem', color: '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sublabel}</div>}
       </div>
       {active ? (
         <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
           background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399' }}>
-          Active
+          {t('common.active')}
         </span>
       ) : (
         <button onClick={onActivate}
           style={{ fontSize: '0.75rem', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)',
             borderRadius: 6, color: '#93c5fd', cursor: 'pointer', padding: '3px 10px', whiteSpace: 'nowrap' }}>
-          Use this
+          {t('common.useThis')}
         </button>
       )}
       {confirmDel ? (
         <>
           <button onClick={onDelete}
             style={{ fontSize: '0.72rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
-              borderRadius: 6, color: '#f87171', cursor: 'pointer', padding: '3px 8px' }}>Confirm</button>
+              borderRadius: 6, color: '#f87171', cursor: 'pointer', padding: '3px 8px' }}>{t('common.confirm')}</button>
           <button onClick={() => setConfirmDel(false)}
             style={{ fontSize: '0.72rem', background: 'transparent', border: '1px solid #334155',
-              borderRadius: 6, color: '#6b7280', cursor: 'pointer', padding: '3px 8px' }}>Cancel</button>
+              borderRadius: 6, color: '#6b7280', cursor: 'pointer', padding: '3px 8px' }}>{t('common.cancel')}</button>
         </>
       ) : (
         <button onClick={() => setConfirmDel(true)}
@@ -110,6 +124,7 @@ function KeyRow({ label, sublabel, active, onActivate, onDelete }) {
 // ── Data Provider panel ───────────────────────────────────────────────────────
 
 function DataProviderPanel() {
+  const { t } = useTranslation();
   const [keys, setKeys]         = useState([]);
   const [loading, setLoading]   = useState(true);
   const [service, setService]   = useState('');
@@ -133,8 +148,8 @@ function DataProviderPanel() {
   const provider = DATA_PROVIDERS.find(p => p.id === service);
 
   const save = async () => {
-    if (!service) { setError('Choose a provider first.'); return; }
-    if (service !== 'yahoo-finance' && !apiKey) { setError('Paste your API key.'); return; }
+    if (!service) { setError(t('keys.chooseProvider')); return; }
+    if (!apiKey) { setError(t('keys.pasteKey')); return; }
     setError(''); setSaving(true);
     try {
       const r = await fetch(`${API_BASE}/db/data-keys`, {
@@ -149,31 +164,37 @@ function DataProviderPanel() {
   };
 
   const activate = async id => {
-    await fetch(`${API_BASE}/db/data-keys/${id}/activate`, { method: 'POST' });
-    load();
+    try {
+      const r = await fetch(`${API_BASE}/db/data-keys/${id}/activate`, { method: 'POST' });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Activate failed'); }
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   const remove = async id => {
-    await fetch(`${API_BASE}/db/data-keys/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      const r = await fetch(`${API_BASE}/db/data-keys/${id}`, { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Delete failed'); }
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>Data Providers</h3>
-        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{keys.length} saved</span>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>{t('keys.dataProvidersTitle')}</h3>
+        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('keys.saved', { count: keys.length })}</span>
       </div>
       <p style={{ fontSize: '0.83rem', color: '#6b7280', margin: '0 0 16px' }}>
-        Store multiple data provider keys and switch the active one anytime. Only the active provider is used for API fetches.
+        {t('keys.dataProvidersDesc')}
       </p>
 
       {/* Saved key list */}
       {loading ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>Loading…</div>
+        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
       ) : keys.length === 0 ? (
         <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '10px 14px', background: '#0b1120', borderRadius: 8, marginBottom: 16, border: '1px dashed #1e293b' }}>
-          No data keys saved yet. Add one below.
+          {t('keys.noDataKeys')}
         </div>
       ) : (
         <div style={{ marginBottom: 16 }}>
@@ -184,6 +205,7 @@ function DataProviderPanel() {
                 label={meta?.label || k.service}
                 sublabel={k.label || meta?.assets}
                 active={!!k.active}
+                protected={!!k.protected}
                 onActivate={() => activate(k.id)}
                 onDelete={() => remove(k.id)} />
             );
@@ -193,12 +215,12 @@ function DataProviderPanel() {
 
       {/* Add new key form */}
       <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '14px' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add New</div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>Provider</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.provider')}</label>
           <select value={service} style={sStyle} onChange={e => setService(e.target.value)}>
-            <option value="">— Select provider —</option>
+            <option value="">{t('keys.selectProvider')}</option>
             {DATA_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
           {provider && (
@@ -207,34 +229,32 @@ function DataProviderPanel() {
               <span>⚡ {provider.rateLimits}</span>
               {provider.url && (
                 <a href={provider.url} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#22d3ee', textDecoration: 'none' }}>Get key ↗</a>
+                  style={{ color: '#22d3ee', textDecoration: 'none' }}>{t('keys.getKey')}</a>
               )}
             </div>
           )}
         </div>
 
-        {service !== 'yahoo-finance' && (
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>API Key</label>
-            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-              style={iStyle} placeholder={provider?.keyHint || 'Paste API key here'} autoComplete="off" />
-          </div>
-        )}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+            style={iStyle} placeholder={provider?.keyHint || t('keys.pasteApiKey')} autoComplete="off" />
+        </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>Label <span style={{ fontWeight: 400, color: '#4b5563' }}>(optional)</span></label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.labelOptional')}</span></label>
           <input value={label} onChange={e => setLabel(e.target.value)}
-            style={sStyle} placeholder="e.g. Personal, Work" />
+            style={sStyle} placeholder={t('keys.labelPlaceholder')} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: protect ? 10 : 14 }}>
           <input type="checkbox" id="dp-protect" checked={protect} onChange={e => setProtect(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="dp-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>🔒 Encrypt with password</label>
+          <label htmlFor="dp-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
         </div>
         {protect && (
           <div style={{ marginBottom: 14 }}>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              style={iStyle} placeholder="Choose a password" />
+              style={iStyle} placeholder={t('keys.choosePassword')} />
           </div>
         )}
 
@@ -242,7 +262,7 @@ function DataProviderPanel() {
 
         <button onClick={save} disabled={saving}
           style={{ background: saving ? '#1e293b' : 'linear-gradient(135deg,#6366f1,#22d3ee)', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#0f172a', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : 'Save & Activate'}
+          {saving ? t('common.saving') : t('keys.saveAndActivate')}
         </button>
       </div>
     </div>
@@ -252,6 +272,7 @@ function DataProviderPanel() {
 // ── AI Model panel ────────────────────────────────────────────────────────────
 
 function AIModelPanel() {
+  const { t } = useTranslation();
   const [keys, setKeys]         = useState([]);
   const [loading, setLoading]   = useState(true);
   const [modelName, setModelName] = useState('');
@@ -285,11 +306,16 @@ function AIModelPanel() {
   }, {});
 
   const save = async () => {
-    if (!modelName) { setError('Choose a model first.'); return; }
-    if (!apiKey) { setError('Paste your API key.'); return; }
-    setError(''); setSaving(true);
+    if (!modelName) { setError(t('keys.chooseModel')); return; }
+    if (!apiKey) { setError(t('keys.pasteKey')); return; }
     const knownModel = AI_MODELS.find(m => m.id === modelName);
     const providerToSave = knownModel?.provider || detectedProvider || '';
+    // F11: validate that key provider matches selected model provider
+    if (knownModel?.provider && detectedProvider && knownModel.provider !== detectedProvider) {
+      setError(t('keys.providerMismatch', { model: modelName, expected: knownModel.providerLabel, detected: detectedProvider }));
+      return;
+    }
+    setError(''); setSaving(true);
     try {
       const r = await fetch(`${API_BASE}/db/model-keys`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -304,31 +330,37 @@ function AIModelPanel() {
   };
 
   const activate = async id => {
-    await fetch(`${API_BASE}/db/model-keys/${id}/activate`, { method: 'POST' });
-    load();
+    try {
+      const r = await fetch(`${API_BASE}/db/model-keys/${id}/activate`, { method: 'POST' });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Activate failed'); }
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   const remove = async id => {
-    await fetch(`${API_BASE}/db/model-keys/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      const r = await fetch(`${API_BASE}/db/model-keys/${id}`, { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Delete failed'); }
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>AI Models</h3>
-        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{keys.length} saved</span>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>{t('keys.aiModelsTitle')}</h3>
+        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('keys.saved', { count: keys.length })}</span>
       </div>
       <p style={{ fontSize: '0.83rem', color: '#6b7280', margin: '0 0 16px' }}>
-        Store keys for multiple AI providers and switch between them. Only the active model is used for AI features.
+        {t('keys.aiModelsDesc')}
       </p>
 
       {/* Saved key list */}
       {loading ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>Loading…</div>
+        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
       ) : keys.length === 0 ? (
         <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '10px 14px', background: '#0b1120', borderRadius: 8, marginBottom: 16, border: '1px dashed #1e293b' }}>
-          No AI model keys saved yet. Add one below.
+          {t('keys.noAiKeys')}
         </div>
       ) : (
         <div style={{ marginBottom: 16 }}>
@@ -345,6 +377,7 @@ function AIModelPanel() {
                   </span>
                 }
                 active={!!k.active}
+                protected={!!k.protected}
                 onActivate={() => activate(k.id)}
                 onDelete={() => remove(k.id)} />
             );
@@ -354,12 +387,12 @@ function AIModelPanel() {
 
       {/* Add new key form */}
       <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '14px' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add New</div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>Model</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.model')}</label>
           <select value={modelName} style={sStyle} onChange={e => setModelName(e.target.value)}>
-            <option value="">— Select model —</option>
+            <option value="">{t('keys.selectModel')}</option>
             {Object.entries(byProvider).map(([prov, models]) => (
               <optgroup key={prov} label={prov}>
                 {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -371,13 +404,13 @@ function AIModelPanel() {
               <span style={{ color: PROVIDER_COLORS[selectedModel.provider] || '#6b7280', fontWeight: 600 }}>{selectedModel.providerLabel}</span>
               <span>{selectedModel.desc}</span>
               <a href={selectedModel.url} target="_blank" rel="noopener noreferrer"
-                style={{ color: '#a78bfa', textDecoration: 'none', whiteSpace: 'nowrap' }}>Get key ↗</a>
+                style={{ color: '#a78bfa', textDecoration: 'none', whiteSpace: 'nowrap' }}>{t('keys.getKey')}</a>
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>API Key</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
           <input type="password" value={apiKey}
             onChange={e => {
               const val = e.target.value;
@@ -387,7 +420,7 @@ function AIModelPanel() {
               setFetchedModels([]);
               setFetchError('');
             }}
-            style={iStyle} placeholder={selectedModel?.keyHint || 'Paste API key here — provider auto-detected'} autoComplete="off" />
+            style={iStyle} placeholder={selectedModel?.keyHint || t('keys.pasteApiKeyAutoDetect')} autoComplete="off" />
         </div>
 
         {/* Auto-detected provider + fetch button */}
@@ -399,7 +432,7 @@ function AIModelPanel() {
               border: `1px solid ${PROVIDER_COLORS[detectedProvider]}55`,
               color: PROVIDER_COLORS[detectedProvider], fontWeight: 600,
             }}>
-              {detectedProvider.charAt(0).toUpperCase() + detectedProvider.slice(1)} key detected
+              {t('keys.keyDetected', { provider: detectedProvider.charAt(0).toUpperCase() + detectedProvider.slice(1) })}
             </span>
             <button
               onClick={async () => {
@@ -422,7 +455,7 @@ function AIModelPanel() {
                 color: '#a5b4fc', cursor: fetching ? 'not-allowed' : 'pointer',
                 padding: '3px 12px', opacity: fetching ? 0.6 : 1,
               }}>
-              {fetching ? 'Fetching…' : 'Fetch available models'}
+              {fetching ? t('keys.fetchingModels') : t('keys.fetchModels')}
             </button>
             {fetchError && <span style={{ fontSize: '0.72rem', color: '#f87171' }}>{fetchError}</span>}
           </div>
@@ -432,35 +465,35 @@ function AIModelPanel() {
         {fetchedModels.length > 0 && (
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>
-              Models on your account <span style={{ fontWeight: 400, color: '#4b5563' }}>({fetchedModels.length} found)</span>
+              {t('keys.modelsOnAccount')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.modelsFound', { count: fetchedModels.length })}</span>
             </label>
             <select value={modelName} style={sStyle} onChange={e => setModelName(e.target.value)}>
-              <option value="">— Select a model —</option>
+              <option value="">{t('keys.selectAModel')}</option>
               {fetchedModels.map(id => {
                 const known = AI_MODELS.find(m => m.id === id);
                 return <option key={id} value={id}>{known ? known.label : id}</option>;
               })}
             </select>
             <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#4b5563' }}>
-              Fetched live · or pick from the static list below
+              {t('keys.fetchedLive')}
             </div>
           </div>
         )}
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>Label <span style={{ fontWeight: 400, color: '#4b5563' }}>(optional)</span></label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.labelOptional')}</span></label>
           <input value={label} onChange={e => setLabel(e.target.value)}
-            style={sStyle} placeholder="e.g. Personal, Work" />
+            style={sStyle} placeholder={t('keys.labelPlaceholder')} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: protect ? 10 : 14 }}>
           <input type="checkbox" id="ai-protect" checked={protect} onChange={e => setProtect(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="ai-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>🔒 Encrypt with password</label>
+          <label htmlFor="ai-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
         </div>
         {protect && (
           <div style={{ marginBottom: 14 }}>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              style={iStyle} placeholder="Choose a password" />
+              style={iStyle} placeholder={t('keys.choosePassword')} />
           </div>
         )}
 
@@ -468,7 +501,7 @@ function AIModelPanel() {
 
         <button onClick={save} disabled={saving}
           style={{ background: saving ? '#1e293b' : 'linear-gradient(135deg,#a78bfa,#22d3ee)', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#0f172a', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : 'Save & Activate'}
+          {saving ? t('common.saving') : t('keys.saveAndActivate')}
         </button>
       </div>
     </div>
@@ -478,30 +511,31 @@ function AIModelPanel() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function KeyManager() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('data');
 
   const tabs = [
-    { id: 'data', label: '📡 Data Providers', desc: 'market data' },
-    { id: 'ai',   label: '🤖 AI Models',       desc: 'AI features' },
+    { id: 'data', label: t('keys.dataProviders'), desc: t('keys.forMarketData') },
+    { id: 'ai',   label: t('keys.aiModels'),      desc: t('keys.forAiFeatures') },
   ];
 
   return (
     <div className="view">
-      <h2>Key Manager</h2>
-      <p>Store multiple API keys for data providers and AI models. Switch the active one anytime — only the active key is used.</p>
+      <h2>{t('keys.title')}</h2>
+      <p>{t('keys.subtitle')}</p>
 
       <div style={{ display: 'flex', gap: 10, margin: '1.5rem 0', background: '#0f172a', padding: 6, borderRadius: 14, border: '1px solid #1f2937', width: 'fit-content' }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
+        {tabs.map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)}
             style={{
-              background: tab === t.id ? '#1e293b' : 'transparent',
-              border: tab === t.id ? '1px solid #334155' : '1px solid transparent',
+              background: tab === tb.id ? '#1e293b' : 'transparent',
+              border: tab === tb.id ? '1px solid #334155' : '1px solid transparent',
               borderRadius: 10, padding: '8px 18px', cursor: 'pointer',
-              color: tab === t.id ? '#e5e7eb' : '#6b7280', fontSize: '0.87rem', fontWeight: tab === t.id ? 700 : 400,
+              color: tab === tb.id ? '#e5e7eb' : '#6b7280', fontSize: '0.87rem', fontWeight: tab === tb.id ? 700 : 400,
               transition: 'all 0.2s',
             }}>
-            {t.label}
-            <div style={{ fontSize: '0.67rem', color: tab === t.id ? '#9ca3af' : '#4b5563', fontWeight: 400 }}>for {t.desc}</div>
+            {tb.label}
+            <div style={{ fontSize: '0.67rem', color: tab === tb.id ? '#9ca3af' : '#4b5563', fontWeight: 400 }}>{tb.desc}</div>
           </button>
         ))}
       </div>

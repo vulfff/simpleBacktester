@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
-const WELCOME_BASE = 'Hi! Describe your trading strategy in plain English and I\'ll convert it to rules. For example: "Buy when a 20-day EMA crosses above a 50-day EMA. Sell when RSI exceeds 70."';
-
 export function AIStrategyChat({ onStrategyGenerated }) {
-  const [messages, setMessages] = useState([{ role: 'assistant', content: WELCOME_BASE }]);
+  const { t, i18n } = useTranslation();
+  const [messages, setMessages] = useState([{ role: 'assistant', content: t('aiStrategy.welcome') }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
@@ -32,8 +32,8 @@ export function AIStrategyChat({ onStrategyGenerated }) {
         const userInds = (d.indicators || []).filter(i => !i.is_builtin);
         if (userInds.length === 0) return;
         const names = userInds.map(i => `"${i.name}"`).join(', ');
-        const hint = `\n\nYou have ${userInds.length} custom indicator${userInds.length > 1 ? 's' : ''}: ${names}. Reference them by name in your prompt. To use non-default parameter values, mention them explicitly — e.g. "use RSI Oversold with period 10 and threshold 25".`;
-        setMessages(prev => [{ ...prev[0], content: WELCOME_BASE + hint }, ...prev.slice(1)]);
+        const hint = t('aiStrategy.customIndicatorHint', { count: userInds.length, names });
+        setMessages(prev => [{ ...prev[0], content: t('aiStrategy.welcome') + hint }, ...prev.slice(1)]);
       })
       .catch(() => {});
   }, []);
@@ -61,7 +61,8 @@ export function AIStrategyChat({ onStrategyGenerated }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: userMessage,
-          temperature: temperature
+          temperature: temperature,
+          language: i18n.language,
         })
       });
 
@@ -77,7 +78,7 @@ export function AIStrategyChat({ onStrategyGenerated }) {
         ...prev,
         {
           role: 'assistant',
-          content: `Generated "${result.name}" strategy with ${result.rules.length} rule(s)`,
+          content: t('aiStrategy.generatedResult', { name: result.name, count: result.rules.length }),
           data: result
         }
       ]);
@@ -97,7 +98,6 @@ export function AIStrategyChat({ onStrategyGenerated }) {
       }
     } catch (err) {
       const errorMsg = err.message || 'Unknown error';
-      setError(errorMsg);
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: `Error: ${errorMsg}`, isError: true }
@@ -131,22 +131,22 @@ export function AIStrategyChat({ onStrategyGenerated }) {
           <span style={{ fontSize: '1.2rem' }}>🤖</span>
           <div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
-              AI Strategy Builder
+              {t('aiStrategy.title')}
               {modelName ? (
                 <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#93c5fd' }}>
                   {modelName}
                 </span>
               ) : modelName === null ? (
                 <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>
-                  No AI model configured
+                  {t('aiStrategy.noModel')}
                 </span>
               ) : null}
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Natural language → Rules</div>
+            <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>{t('aiStrategy.subtitle')}</div>
           </div>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#9ca3af' }}>
-          Creativity:
+          {t('aiStrategy.creativity')}
           <input
             type="range"
             min="0"
@@ -206,7 +206,7 @@ export function AIStrategyChat({ onStrategyGenerated }) {
                   fontSize: '0.75rem',
                   color: '#93c5fd'
                 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Strategy Data:</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('aiStrategy.strategyData')}</div>
                   <pre style={{ margin: 0, overflow: 'auto', maxHeight: 150 }}>
                     {JSON.stringify(msg.data, null, 2)}
                   </pre>
@@ -218,7 +218,7 @@ export function AIStrategyChat({ onStrategyGenerated }) {
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9ca3af', fontSize: '0.85rem' }}>
             <span style={{ animation: 'spin 1s linear infinite' }}>⚙️</span>
-            Generating strategy…
+            {t('aiStrategy.generatingStrategy')}
             <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
@@ -249,7 +249,7 @@ export function AIStrategyChat({ onStrategyGenerated }) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-            placeholder="Describe your strategy…"
+            placeholder={t('aiStrategy.placeholder')}
             disabled={loading}
             style={{
               flex: 1,
@@ -276,7 +276,7 @@ export function AIStrategyChat({ onStrategyGenerated }) {
               fontWeight: 600
             }}
           >
-            Send
+            {t('common.send')}
           </button>
         </div>
       </div>

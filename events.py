@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from tickdata import TickData
@@ -22,7 +22,7 @@ class SignalEvent(Event):
     action: str  # "buy" or "sell"
     quantity: float = 1.0
     strength: float = 1.0
-    time: datetime = field(default_factory=datetime.utcnow)
+    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     reason: Optional[str] = None
 
 
@@ -32,7 +32,7 @@ class OrderEvent(Event):
     action: str  # "buy" or "sell"
     quantity: float
     order_type: str = "market"
-    time: datetime = field(default_factory=datetime.utcnow)
+    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -42,4 +42,4 @@ class FillEvent(Event):
     quantity: float
     price: float
     commission: float = 0.0
-    time: datetime = field(default_factory=datetime.utcnow)
+    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

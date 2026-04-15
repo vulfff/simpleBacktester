@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export function AIIndicatorChat({ onIndicatorGenerated }) {
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! Describe a technical indicator you want to create, and I\'ll generate the expression tree. For example: "RSI oversold signal that returns 1 when RSI(14) is below 30" or "Moving average distance measured as percentage"' }
+    { role: 'assistant', content: t('aiIndicator.welcome') }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,9 +15,12 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/db/api_keys`)
+    fetch(`${API_BASE}/db/model-keys`)
       .then(r => r.json())
-      .then(d => setModelName(d.api_key?.model_name || null))
+      .then(d => {
+        const active = (d.keys || []).find(k => k.active)
+        setModelName(active?.model_name || null)
+      })
       .catch(() => setModelName(null));
   }, []);
 
@@ -41,7 +46,8 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: userMessage
+          prompt: userMessage,
+          language: i18n.language,
         })
       });
 
@@ -57,7 +63,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
         ...prev,
         {
           role: 'assistant',
-          content: `Generated indicator: "${result.name}"\n${result.description}`,
+          content: t('aiIndicator.generatedResult', { name: result.name, description: result.description }),
           data: result
         }
       ]);
@@ -100,18 +106,18 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
         <span style={{ fontSize: '1.2rem' }}>📊</span>
         <div>
           <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
-            AI Indicator Builder
+            {t('aiIndicator.title')}
             {modelName ? (
               <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>
                 {modelName}
               </span>
             ) : modelName === null ? (
               <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>
-                No AI model configured
+                {t('aiIndicator.noModel')}
               </span>
             ) : null}
           </div>
-          <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Natural language → Expression trees</div>
+          <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>{t('aiIndicator.subtitle')}</div>
         </div>
       </div>
 
@@ -173,7 +179,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9ca3af', fontSize: '0.85rem' }}>
             <span style={{ animation: 'spin 1s linear infinite' }}>⚙️</span>
-            Generating indicator…
+            {t('aiIndicator.generatingIndicator')}
             <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
@@ -204,7 +210,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-            placeholder="Describe an indicator…"
+            placeholder={t('aiIndicator.placeholder')}
             disabled={loading}
             style={{
               flex: 1,
@@ -231,7 +237,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
               fontWeight: 600
             }}
           >
-            Send
+            {t('common.send')}
           </button>
         </div>
       </div>

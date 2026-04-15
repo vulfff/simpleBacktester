@@ -44,7 +44,7 @@ INDICATOR_SYSTEM_PROMPT = """You are an expert technical analysis specialist. Yo
 ### Operand JSON Structure
 All operands follow this pattern in the expression tree:
 ```json
-{ "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 20 } }
+{ "node": "operand", "operand": { "type": "sma", "field": "close", "period": 20 } }
 { "node": "operand", "operand": { "type": "highest_high", "field": "high", "period": 14 } }
 { "node": "operand", "operand": { "type": "atr", "period": 14 } }
 { "node": "operand", "operand": { "type": "typical_price" } }
@@ -62,7 +62,7 @@ Constant values:
 {
   "node": "binop",
   "op": "+",
-  "left": { "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 20 } },
+  "left": { "node": "operand", "operand": { "type": "sma", "field": "close", "period": 20 } },
   "right": { "node": "const", "value": 100 }
 }
 ```
@@ -74,7 +74,7 @@ Available operators: `+`, `-`, `*`, `/`, `**` (power), `%` (modulo)
 {
   "node": "unop",
   "op": "abs",
-  "operand": { "node": "operand", "operand": { "type": "rsi", "field": "mid", "period": 14 } }
+  "operand": { "node": "operand", "operand": { "type": "rsi", "field": "close", "period": 14 } }
 }
 ```
 
@@ -84,7 +84,7 @@ Available unary ops: `neg` (negate), `abs` (absolute), `sqrt` (square root), `lo
 ```json
 {
   "node": "clamp",
-  "value": { "node": "operand", "operand": { "type": "rsi", "field": "mid", "period": 14 } },
+  "value": { "node": "operand", "operand": { "type": "rsi", "field": "close", "period": 14 } },
   "lo": { "node": "const", "value": 0 },
   "hi": { "node": "const", "value": 100 }
 }
@@ -94,7 +94,7 @@ Available unary ops: `neg` (negate), `abs` (absolute), `sqrt` (square root), `lo
 ```json
 {
   "node": "ifelse",
-  "cond_left": { "node": "operand", "operand": { "type": "rsi", "field": "mid", "period": 14 } },
+  "cond_left": { "node": "operand", "operand": { "type": "rsi", "field": "close", "period": 14 } },
   "cond_op": ">",
   "cond_right": { "node": "const", "value": 70 },
   "then": { "node": "const", "value": 1 },
@@ -114,7 +114,7 @@ Description: "RSI-based oversold indicator that returns 1 when oversold, 0 other
   "description": "Returns 1 when RSI(14) is below 30 (oversold signal)",
   "expr": {
     "node": "ifelse",
-    "cond_left": { "node": "operand", "operand": { "type": "rsi", "field": "mid", "period": 14 } },
+    "cond_left": { "node": "operand", "operand": { "type": "rsi", "field": "close", "period": 14 } },
     "cond_op": "<",
     "cond_right": { "node": "const", "value": 30 },
     "then": { "node": "const", "value": 1 },
@@ -139,10 +139,10 @@ Description: "How far is price from its 20-period moving average, as a percentag
       "left": {
         "node": "binop",
         "op": "-",
-        "left": { "node": "operand", "operand": { "type": "price", "field": "mid" } },
-        "right": { "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 20 } }
+        "left": { "node": "operand", "operand": { "type": "price", "field": "close" } },
+        "right": { "node": "operand", "operand": { "type": "sma", "field": "close", "period": 20 } }
       },
-      "right": { "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 20 } }
+      "right": { "node": "operand", "operand": { "type": "sma", "field": "close", "period": 20 } }
     },
     "right": { "node": "const", "value": 100 }
   },
@@ -159,7 +159,7 @@ Description: "RSI scaled from 0-100 range to 0-1 range"
   "expr": {
     "node": "binop",
     "op": "/",
-    "left": { "node": "operand", "operand": { "type": "rsi", "field": "mid", "period": 14 } },
+    "left": { "node": "operand", "operand": { "type": "rsi", "field": "close", "period": 14 } },
     "right": { "node": "const", "value": 100 }
   },
   "color": "#ec4899"
@@ -179,7 +179,7 @@ Description: "Williams Percent Range — measures overbought/oversold on a -100 
       "left": {
         "node": "binop", "op": "-",
         "left":  { "node": "operand", "operand": { "type": "highest_high", "field": "high", "period": 14 } },
-        "right": { "node": "operand", "operand": { "type": "price", "field": "mid" } }
+        "right": { "node": "operand", "operand": { "type": "price", "field": "close" } }
       },
       "right": {
         "node": "binop", "op": "-",
@@ -219,10 +219,10 @@ Description: "Price change from N bars ago as percentage"
       "left": {
         "node": "binop",
         "op": "-",
-        "left": { "node": "operand", "operand": { "type": "price", "field": "mid" } },
-        "right": { "node": "operand", "operand": { "type": "lookback", "field": "mid", "period": 5 } }
+        "left": { "node": "operand", "operand": { "type": "price", "field": "close" } },
+        "right": { "node": "operand", "operand": { "type": "lookback", "field": "close", "period": 5 } }
       },
-      "right": { "node": "operand", "operand": { "type": "lookback", "field": "mid", "period": 5 } }
+      "right": { "node": "operand", "operand": { "type": "lookback", "field": "close", "period": 5 } }
     },
     "right": { "node": "const", "value": 100 }
   },
@@ -240,8 +240,8 @@ Description: "Difference between a fast and slow SMA, normalised by ATR so scale
     "node": "binop", "op": "/",
     "left": {
       "node": "binop", "op": "-",
-      "left":  { "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 20 } },
-      "right": { "node": "operand", "operand": { "type": "sma", "field": "mid", "period": 50 } }
+      "left":  { "node": "operand", "operand": { "type": "sma", "field": "close", "period": 20 } },
+      "right": { "node": "operand", "operand": { "type": "sma", "field": "close", "period": 50 } }
     },
     "right": { "node": "operand", "operand": { "type": "atr", "period": 14 } }
   },
@@ -296,13 +296,15 @@ The JSON must include:
 """
 
 
-def build_indicator_from_prompt(user_prompt: str, provider=None) -> Dict[str, Any]:
+def build_indicator_from_prompt(user_prompt: str, provider=None, language_directive: str = "") -> Dict[str, Any]:
     """
     Build an indicator expression from natural language using configured AI provider.
 
     Args:
         user_prompt: Natural language indicator description
         provider: Optional pre-configured provider. If None, reads from database.
+        language_directive: Optional suffix appended to the system prompt instructing
+            the model which natural language to respond in (for name/description prose).
 
     Returns:
         Dictionary with name, description, expr, and color
@@ -316,7 +318,7 @@ def build_indicator_from_prompt(user_prompt: str, provider=None) -> Dict[str, An
         # Uses _call_api directly so we get raw text without strategy validation.
         raw_text = provider._call_api(
             user_prompt=f"Create an indicator from this description:\n\n{user_prompt}",
-            system_prompt=INDICATOR_SYSTEM_PROMPT,
+            system_prompt=INDICATOR_SYSTEM_PROMPT + language_directive,
             temperature=0.5,
         )
 

@@ -10,7 +10,7 @@ For each bar:
   slippage            = Gauss(0, slippage_sigma × base_price)
   fill_price          = base_price ± price_impact ± slippage   (adverse direction)
 
-When bar.volume == 0 the model falls back to zero-impact immediate fill at bid/ask
+When bar.volume == 0 the model falls back to zero-impact immediate fill at close
 (equivalent to the old naive engine behaviour) and records a warning.
 """
 
@@ -55,7 +55,7 @@ class FillModel:
         order     : the order to fill
         tick      : the bar being used for execution
         use_open  : if True, use tick.open as base price (next-bar-open fills);
-                    if False, use tick.ask / tick.bid (same-bar-close fills)
+                    if False, use tick.close (same-bar fills)
 
         Returns
         -------
@@ -64,21 +64,21 @@ class FillModel:
         warnings: list[str] = []
         is_buy = order.action in ("buy", "cover")
 
-        # Base price: open for next-bar-open fills, otherwise bid/ask
+        # Base price: open for next-bar-open fills, otherwise close
         if use_open:
-            base = tick.open if tick.open > 0 else (tick.ask if is_buy else tick.bid)
+            base = tick.open if tick.open > 0 else tick.close
         else:
-            base = tick.ask if is_buy else tick.bid
+            base = tick.close
 
         if base <= 0:
-            base = max(tick.bid, tick.ask, 1e-9)
+            base = max(tick.close, 1e-9)
 
         # ── liquidity ────────────────────────────────────────────────────────
         if tick.volume <= 0:
             # No volume data – fall back to full fill, no impact
             if not self._no_volume_warned:
                 warnings.append(
-                    "Bar volume is 0; fill model falling back to full fill at bid/ask. "
+                    "Bar volume is 0; fill model falling back to full fill at close. "
                     "Supply volume data for realistic liquidity simulation."
                 )
                 self._no_volume_warned = True
@@ -97,7 +97,7 @@ class FillModel:
 
         # ── final fill price (adverse: buys pay more, sells receive less) ─────
         if is_buy:
-            fill_price = base + impact + slippage
+            fill_price = base + impact + abs(slippage)
         else:
             fill_price = base - impact - abs(slippage)
 

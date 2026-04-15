@@ -27,6 +27,24 @@ def get_db_conn():
     return conn
 
 
+class db_conn:
+    """Context manager for SQLite connections — guarantees close on exit."""
+    def __init__(self, commit: bool = False):
+        self._commit = commit
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = get_db_conn()
+        return self._conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn is not None:
+            if self._commit and exc_type is None:
+                self._conn.commit()
+            self._conn.close()
+        return False
+
+
 def _infer_provider(model_name: str) -> str:
     """Derive provider name from model identifier."""
     mn = model_name.lower()
@@ -43,227 +61,238 @@ def _infer_provider(model_name: str) -> str:
 
 def create_tables() -> None:
     """Create tables if they don't exist."""
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS strategies (
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        logic TEXT,
-        config TEXT
-    )
-    ''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS indicators (
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        expression TEXT
-    )
-    ''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS api_keys (
-        id INTEGER PRIMARY KEY,
-        service TEXT,
-        model_name TEXT,
-        data_key TEXT,
-        model_key TEXT,
-        protected INTEGER
-    )
-    ''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS data_api_keys (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        service TEXT NOT NULL,
-        key_data TEXT DEFAULT '',
-        protected INTEGER DEFAULT 0,
-        active INTEGER DEFAULT 0,
-        label TEXT DEFAULT ''
-    )
-    ''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS model_api_keys (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL,
-        provider TEXT NOT NULL DEFAULT '',
-        key_data TEXT DEFAULT '',
-        protected INTEGER DEFAULT 0,
-        active INTEGER DEFAULT 0,
-        label TEXT DEFAULT ''
-    )
-    ''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS backtest_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        strategy_name TEXT,
-        strategy_hash TEXT UNIQUE,
-        ticker TEXT,
-        timeframe TEXT,
-        start_date TEXT,
-        end_date TEXT,
-        starting_cash REAL,
-        run_at TEXT,
-        params_json TEXT,
-        metrics_json TEXT,
-        equity_curve_json TEXT,
-        trade_log_json TEXT,
-        signal_log_json TEXT
-    )
-    ''')
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS strategies (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            logic TEXT,
+            config TEXT
+        )
+        ''')
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS indicators (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            expression TEXT
+        )
+        ''')
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY,
+            service TEXT,
+            model_name TEXT,
+            data_key TEXT,
+            model_key TEXT,
+            protected INTEGER
+        )
+        ''')
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS data_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service TEXT NOT NULL,
+            key_data TEXT DEFAULT '',
+            protected INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 0,
+            label TEXT DEFAULT ''
+        )
+        ''')
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS model_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_name TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
+            key_data TEXT DEFAULT '',
+            protected INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 0,
+            label TEXT DEFAULT ''
+        )
+        ''')
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS backtest_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_name TEXT,
+            strategy_hash TEXT UNIQUE,
+            ticker TEXT,
+            timeframe TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            starting_cash REAL,
+            run_at TEXT,
+            params_json TEXT,
+            metrics_json TEXT,
+            equity_curve_json TEXT,
+            trade_log_json TEXT,
+            signal_log_json TEXT
+        )
+        ''')
 
-    # Idempotent migration: add signal_log_json to existing DBs
-    try:
-        cur.execute("ALTER TABLE backtest_runs ADD COLUMN signal_log_json TEXT")
-    except Exception:
-        pass  # column already exists
+        # Idempotent migrations: only ignore "duplicate column" errors
+        def _add_column(sql: str) -> None:
+            try:
+                cur.execute(sql)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
 
-    # Idempotent migration: add is_builtin to indicators
-    try:
-        cur.execute("ALTER TABLE indicators ADD COLUMN is_builtin INTEGER DEFAULT 0")
-    except Exception:
-        pass  # column already exists
+        _add_column("ALTER TABLE backtest_runs ADD COLUMN signal_log_json TEXT")
+        _add_column("ALTER TABLE indicators ADD COLUMN is_builtin INTEGER DEFAULT 0")
+        _add_column("ALTER TABLE strategies ADD COLUMN is_builtin INTEGER DEFAULT 0")
 
-    # Idempotent migration: add is_builtin to strategies
-    try:
-        cur.execute("ALTER TABLE strategies ADD COLUMN is_builtin INTEGER DEFAULT 0")
-    except Exception:
-        pass  # column already exists
-
-    # ── Migrate from legacy api_keys table ────────────────────────────────────
-    try:
-        cur.execute("SELECT service, model_name, data_key, model_key, protected FROM api_keys LIMIT 1")
-        old = cur.fetchone()
-        if old:
-            cur.execute("SELECT COUNT(*) as cnt FROM data_api_keys")
-            if cur.fetchone()["cnt"] == 0 and old["data_key"]:
-                svc = old["service"] or "unknown"
-                cur.execute(
-                    "INSERT INTO data_api_keys (service, key_data, protected, active, label) VALUES (?, ?, ?, 1, ?)",
-                    (svc, old["data_key"], old["protected"] or 0, f"{svc} (migrated)"),
-                )
-            cur.execute("SELECT COUNT(*) as cnt FROM model_api_keys")
-            if cur.fetchone()["cnt"] == 0 and old["model_key"]:
-                mn = old["model_name"] or "unknown"
-                cur.execute(
-                    "INSERT INTO model_api_keys (model_name, provider, key_data, protected, active, label) VALUES (?, ?, ?, ?, 1, ?)",
-                    (mn, _infer_provider(mn), old["model_key"], old["protected"] or 0, f"{mn} (migrated)"),
-                )
-    except Exception:
-        pass  # legacy table may not exist in fresh DBs
-
-    conn.commit()
-    conn.close()
+        # ── Migrate from legacy api_keys table ────────────────────────────────
+        try:
+            cur.execute("SELECT service, model_name, data_key, model_key, protected FROM api_keys LIMIT 1")
+            old = cur.fetchone()
+            if old:
+                cur.execute("SELECT COUNT(*) as cnt FROM data_api_keys")
+                if cur.fetchone()["cnt"] == 0 and old["data_key"]:
+                    svc = old["service"] or "unknown"
+                    cur.execute(
+                        "INSERT INTO data_api_keys (service, key_data, protected, active, label) VALUES (?, ?, ?, 1, ?)",
+                        (svc, old["data_key"], old["protected"] or 0, f"{svc} (migrated)"),
+                    )
+                cur.execute("SELECT COUNT(*) as cnt FROM model_api_keys")
+                if cur.fetchone()["cnt"] == 0 and old["model_key"]:
+                    mn = old["model_name"] or "unknown"
+                    cur.execute(
+                        "INSERT INTO model_api_keys (model_name, provider, key_data, protected, active, label) VALUES (?, ?, ?, ?, 1, ?)",
+                        (mn, _infer_provider(mn), old["model_key"], old["protected"] or 0, f"{mn} (migrated)"),
+                    )
+        except Exception:
+            pass  # legacy table may not exist in fresh DBs
 
 
 # ── Data API key helpers ───────────────────────────────────────────────────────
 
 def list_data_keys() -> List[Dict[str, Any]]:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT id, service, label, active, protected FROM data_api_keys ORDER BY active DESC, id")
-    rows = [dict(r) for r in cur.fetchall()]
-    conn.close()
-    return rows
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, service, label, active, protected FROM data_api_keys ORDER BY active DESC, id")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def save_data_key(service: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    if activate:
-        cur.execute("UPDATE data_api_keys SET active=0")
-    cur.execute(
-        "INSERT INTO data_api_keys (service, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?)",
-        (service, key_data, 1 if protected else 0, 1 if activate else 0, label),
-    )
-    new_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return new_id
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        if activate:
+            cur.execute("UPDATE data_api_keys SET active=0")
+        cur.execute(
+            "INSERT INTO data_api_keys (service, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?)",
+            (service, key_data, 1 if protected else 0, 1 if activate else 0, label),
+        )
+        return cur.lastrowid
 
 
 def activate_data_key(key_id: int) -> bool:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("UPDATE data_api_keys SET active=0")
-    cur.execute("UPDATE data_api_keys SET active=1 WHERE id=?", (key_id,))
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE data_api_keys SET active=0")
+        cur.execute("UPDATE data_api_keys SET active=1 WHERE id=?", (key_id,))
+        return cur.rowcount > 0
 
 
 def delete_data_key(key_id: int) -> bool:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM data_api_keys WHERE id=?", (key_id,))
-    conn.commit()
-    deleted = cur.rowcount > 0
-    conn.close()
-    return deleted
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM data_api_keys WHERE id=?", (key_id,))
+        return cur.rowcount > 0
 
 
 def get_active_data_key() -> Optional[Dict[str, Any]]:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT service, key_data, protected FROM data_api_keys WHERE active=1 LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, service, key_data, protected FROM data_api_keys WHERE active=1 LIMIT 1")
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_data_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, service, key_data, protected FROM data_api_keys WHERE id=?", (key_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def update_data_key_data(key_id: int, key_data: str) -> None:
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE data_api_keys SET key_data=? WHERE id=?", (key_data, key_id))
+
+
+def list_all_data_keys_full() -> List[Dict[str, Any]]:
+    """Return id, key_data, protected for all data keys (used for migration)."""
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, key_data, protected FROM data_api_keys")
+        return [dict(r) for r in cur.fetchall()]
 
 
 # ── Model API key helpers ─────────────────────────────────────────────────────
 
 def list_model_keys() -> List[Dict[str, Any]]:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT id, model_name, provider, label, active, protected FROM model_api_keys ORDER BY active DESC, id")
-    rows = [dict(r) for r in cur.fetchall()]
-    conn.close()
-    return rows
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, model_name, provider, label, active, protected FROM model_api_keys ORDER BY active DESC, id")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def save_model_key(model_name: str, provider: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    if activate:
-        cur.execute("UPDATE model_api_keys SET active=0")
-    cur.execute(
-        "INSERT INTO model_api_keys (model_name, provider, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?, ?)",
-        (model_name, provider, key_data, 1 if protected else 0, 1 if activate else 0, label),
-    )
-    new_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return new_id
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        if activate:
+            cur.execute("UPDATE model_api_keys SET active=0")
+        cur.execute(
+            "INSERT INTO model_api_keys (model_name, provider, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?, ?)",
+            (model_name, provider, key_data, 1 if protected else 0, 1 if activate else 0, label),
+        )
+        return cur.lastrowid
 
 
 def activate_model_key(key_id: int) -> bool:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("UPDATE model_api_keys SET active=0")
-    cur.execute("UPDATE model_api_keys SET active=1 WHERE id=?", (key_id,))
-    conn.commit()
-    changed = cur.rowcount > 0
-    conn.close()
-    return changed
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE model_api_keys SET active=0")
+        cur.execute("UPDATE model_api_keys SET active=1 WHERE id=?", (key_id,))
+        return cur.rowcount > 0
 
 
 def delete_model_key(key_id: int) -> bool:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM model_api_keys WHERE id=?", (key_id,))
-    conn.commit()
-    deleted = cur.rowcount > 0
-    conn.close()
-    return deleted
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM model_api_keys WHERE id=?", (key_id,))
+        return cur.rowcount > 0
 
 
 def get_active_model_key() -> Optional[Dict[str, Any]]:
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT model_name, provider, key_data, protected FROM model_api_keys WHERE active=1 LIMIT 1")
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, model_name, provider, key_data, protected FROM model_api_keys WHERE active=1 LIMIT 1")
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_model_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, model_name, provider, key_data, protected FROM model_api_keys WHERE id=?", (key_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def update_model_key_data(key_id: int, key_data: str) -> None:
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE model_api_keys SET key_data=? WHERE id=?", (key_data, key_id))
+
+
+def list_all_model_keys_full() -> List[Dict[str, Any]]:
+    """Return id, key_data, protected for all model keys (used for migration)."""
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, key_data, protected FROM model_api_keys")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def _derive_fernet_key(password: str, salt: bytes) -> bytes:
@@ -365,75 +394,72 @@ def save_run(
     hash_params = dict(params, run_at=run_at)
     run_hash = _make_run_hash(hash_params)
 
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute(
-        """INSERT OR IGNORE INTO backtest_runs
-           (strategy_name, strategy_hash, ticker, timeframe, start_date, end_date,
-            starting_cash, run_at, params_json, metrics_json, equity_curve_json,
-            trade_log_json, signal_log_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            strategy_name,
-            run_hash,
-            ticker,
-            timeframe,
-            start_date,
-            end_date,
-            starting_cash,
-            run_at,
-            json.dumps(params),
-            json.dumps(metrics),
-            json.dumps(equity_curve),
-            json.dumps(trade_log),
-            json.dumps(signal_log or []),
-        ),
-    )
-    conn.commit()
-    run_id = cur.lastrowid
-    conn.close()
-    return run_id
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT OR IGNORE INTO backtest_runs
+               (strategy_name, strategy_hash, ticker, timeframe, start_date, end_date,
+                starting_cash, run_at, params_json, metrics_json, equity_curve_json,
+                trade_log_json, signal_log_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                strategy_name,
+                run_hash,
+                ticker,
+                timeframe,
+                start_date,
+                end_date,
+                starting_cash,
+                run_at,
+                json.dumps(params),
+                json.dumps(metrics),
+                json.dumps(equity_curve),
+                json.dumps(trade_log),
+                json.dumps(signal_log or []),
+            ),
+        )
+        return cur.lastrowid
 
 
 def list_runs() -> List[Dict[str, Any]]:
     """Return all runs (metadata only, no equity curve) ordered newest first."""
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute(
-        """SELECT id, strategy_name, ticker, timeframe, start_date, end_date,
-                  starting_cash, run_at, metrics_json
-           FROM backtest_runs
-           ORDER BY id DESC"""
-    )
-    rows = []
-    for r in cur.fetchall():
-        d = dict(r)
-        try:
-            d["metrics"] = _sanitize_floats(json.loads(d.pop("metrics_json") or "{}"))
-        except Exception:
-            d["metrics"] = {}
-        rows.append(d)
-    conn.close()
-    return rows
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, strategy_name, ticker, timeframe, start_date, end_date,
+                      starting_cash, run_at, metrics_json
+               FROM backtest_runs
+               ORDER BY id DESC"""
+        )
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            try:
+                d["metrics"] = _sanitize_floats(json.loads(d.pop("metrics_json") or "{}"))
+            except Exception:
+                d["metrics"] = {}
+            rows.append(d)
+        return rows
 
 
 def get_run(run_id: int) -> Optional[Dict[str, Any]]:
     """Return a full run including equity curve and trade log."""
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute("SELECT * FROM backtest_runs WHERE id = ?", (run_id,))
-    row = cur.fetchone()
-    conn.close()
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM backtest_runs WHERE id = ?", (run_id,))
+        row = cur.fetchone()
     if not row:
         return None
     d = dict(row)
+    _list_fields = {"equity_curve", "trade_log"}
     for key in ("params_json", "metrics_json", "equity_curve_json", "trade_log_json"):
         raw = d.pop(key, None)
         field_name = key.replace("_json", "")
+        default = [] if field_name in _list_fields else {}
         try:
-            d[field_name] = _sanitize_floats(json.loads(raw) if raw else {})
+            d[field_name] = _sanitize_floats(json.loads(raw) if raw else default)
         except Exception:
-            d[field_name] = {}
+            d[field_name] = default
     # signal_log is a list; handle separately so old runs default to []
     raw_sl = d.pop("signal_log_json", None)
     try:
@@ -445,38 +471,62 @@ def get_run(run_id: int) -> Optional[Dict[str, Any]]:
 
 def delete_run(run_id: int) -> bool:
     """Delete a run by id. Returns True if a row was deleted."""
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute("DELETE FROM backtest_runs WHERE id = ?", (run_id,))
-    conn.commit()
-    deleted = cur.rowcount > 0
-    conn.close()
-    return deleted
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM backtest_runs WHERE id = ?", (run_id,))
+        return cur.rowcount > 0
 
 
 def delete_all_runs() -> int:
     """Delete every backtest run. Returns count of rows deleted."""
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    cur.execute("DELETE FROM backtest_runs")
-    conn.commit()
-    count = cur.rowcount
-    conn.close()
-    return count
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM backtest_runs")
+        return cur.rowcount
 
 
 def delete_runs_batch(ids: List[int]) -> int:
     """Delete multiple runs by id. Returns count of rows deleted."""
     if not ids:
         return 0
-    conn = get_db_conn()
-    cur  = conn.cursor()
-    placeholders = ",".join("?" * len(ids))
-    cur.execute(f"DELETE FROM backtest_runs WHERE id IN ({placeholders})", ids)
-    conn.commit()
-    count = cur.rowcount
-    conn.close()
-    return count
+    with db_conn(commit=True) as conn:
+        cur = conn.cursor()
+        placeholders = ",".join("?" * len(ids))
+        cur.execute(f"DELETE FROM backtest_runs WHERE id IN ({placeholders})", ids)
+        return cur.rowcount
+
+
+def get_strategy(strategy_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch a single strategy row by id. Returns None if not found."""
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, logic, config, is_builtin FROM strategies WHERE id = ?", (strategy_id,))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "name": row[1],
+            "logic": row[2],
+            "config": row[3],
+            "is_builtin": bool(row[4]),
+        }
+
+
+def get_indicator(indicator_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch a single indicator row by id. Returns None if not found."""
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, expression, is_builtin FROM indicators WHERE id = ?", (indicator_id,))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "name": row[1],
+            "expression": row[2],
+            "is_builtin": bool(row[3]),
+        }
 
 
 if __name__ == '__main__':

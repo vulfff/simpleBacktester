@@ -82,6 +82,7 @@ class Portfolio:
             sold     = min(quantity, max(prev_qty, 0.0))   # can't sell more than held
             if sold <= 0:
                 return
+            quantity = sold   # log actual executed qty, not requested qty
             self.positions[name] = prev_qty - sold
             self.cash += sold * price - commission
             # Clean up dust positions
@@ -99,6 +100,7 @@ class Portfolio:
             cover_qty = min(quantity, max(-prev_qty, 0.0))  # can't cover more than shorted
             if cover_qty <= 0:
                 return
+            quantity = cover_qty   # log actual executed qty, not requested qty
             self.positions[name] = prev_qty + cover_qty
             self.cash -= cover_qty * price + commission
             if abs(self.positions[name]) < 1e-9:

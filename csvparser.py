@@ -6,8 +6,7 @@ Reads a CSV file and yields TickData objects.
 The column_map dict maps internal field names → CSV column headers:
   {
     "time":   "timestamp",   # datetime column
-    "bid":    "bid",
-    "ask":    "ask",         # optional – falls back to bid if missing
+    "close":  "close",       # bar close price (aliases: Close, c, bid, price, last)
     "volume": "volume",      # optional
     "name":   "symbol",      # optional – overridden by symbol arg
   }
@@ -19,7 +18,7 @@ from __future__ import annotations
 
 import csv
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterator, Optional
 
 from tickdata import TickData
@@ -57,7 +56,7 @@ def _parse_dt(raw: str, fmt: Optional[str] = None) -> datetime:
             continue
     # Last resort: try treating it as a unix timestamp (float seconds)
     try:
-        return datetime.utcfromtimestamp(float(raw))
+        return datetime.fromtimestamp(float(raw), tz=timezone.utc)
     except (ValueError, OSError, OverflowError):
         pass
     raise ValueError(f"Cannot parse datetime: {raw!r}")
@@ -82,7 +81,7 @@ class CSVTickDataFeed:
     Parameters
     ----------
     file_path   : path to the CSV file
-    column_map  : maps internal keys (time, bid, ask, volume, name)
+    column_map  : maps internal keys (time, close, volume, name)
                   to actual CSV column headers
     symbol      : overrides the name column (or provides a default)
     time_format : strftime format string for parsing timestamps
@@ -91,8 +90,7 @@ class CSVTickDataFeed:
     # Default mapping – covers many common OHLCV exports
     DEFAULT_MAP: Dict[str, str] = {
         "time":   "timestamp",
-        "bid":    "bid",
-        "ask":    "ask",
+        "close":  "close",
         "volume": "volume",
         "name":   "symbol",
     }
@@ -100,8 +98,7 @@ class CSVTickDataFeed:
     # Alternative column names tried when the mapped column is absent
     _ALIASES: Dict[str, list[str]] = {
         "time":   ["timestamp", "date", "datetime", "time", "Date", "DateTime", "Timestamp"],
-        "bid":    ["bid", "close", "Close", "price", "Price", "last", "Last"],
-        "ask":    ["ask", "Ask"],
+        "close":  ["close", "Close", "c", "bid", "Bid", "price", "Price", "last", "Last"],
         "open":   ["open", "Open", "o"],
         "high":   ["high", "High", "h", "high_price"],
         "low":    ["low", "Low", "l", "low_price"],
@@ -124,7 +121,20 @@ class CSVTickDataFeed:
     # ------------------------------------------------------------------
 
     def __iter__(self) -> Iterator[TickData]:
-        with open(self.file_path, newline="", encoding="utf-8-sig") as fh:
+        # Try common encodings in order; latin-1 never raises UnicodeDecodeError
+        fh = None
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                candidate = open(self.file_path, newline="", encoding=enc)
+                candidate.read(4096)   # probe for decode errors
+                candidate.seek(0)
+                fh = candidate
+                break
+            except UnicodeDecodeError:
+                candidate.close()
+        if fh is None:
+            raise ValueError(f"Cannot decode CSV file: {self.file_path!r}")
+        with fh:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None:
                 return
@@ -142,17 +152,16 @@ class CSVTickDataFeed:
                 return None
 
             col_time   = resolve("time")
-            col_bid    = resolve("bid")
-            col_ask    = resolve("ask")
+            col_close  = resolve("close")
             col_open   = resolve("open")
             col_high   = resolve("high")
             col_low    = resolve("low")
             col_volume = resolve("volume")
             col_name   = resolve("name")
 
-            if col_bid is None:
+            if col_close is None:
                 raise ValueError(
-                    f"Could not find a price/bid column in CSV. "
+                    f"Could not find a price/close column in CSV. "
                     f"Headers found: {list(reader.fieldnames)}. "
                     f"column_map supplied: {self.column_map}"
                 )
@@ -162,22 +171,19 @@ class CSVTickDataFeed:
 
             for row in reader:
                 # --- price --------------------------------------------------
-                bid = _safe_float(row.get(col_bid, ""))
-                if bid is None:
+                bar_close = _safe_float(row.get(col_close, ""))
+                if bar_close is None:
                     skipped += 1
                     continue
 
-                ask_raw = _safe_float(row.get(col_ask, "")) if col_ask else None
-                ask = ask_raw if ask_raw is not None else bid
-
                 open_raw = _safe_float(row.get(col_open, "")) if col_open else None
-                bar_open = open_raw if open_raw is not None else bid
+                bar_open = open_raw if open_raw is not None else bar_close
 
                 high_raw = _safe_float(row.get(col_high, "")) if col_high else None
-                bar_high = high_raw if high_raw is not None else bid
+                bar_high = high_raw if high_raw is not None else bar_close
 
                 low_raw = _safe_float(row.get(col_low, "")) if col_low else None
-                bar_low = low_raw if low_raw is not None else bid
+                bar_low = low_raw if low_raw is not None else bar_close
 
                 volume = _safe_float(row.get(col_volume, "")) if col_volume else 0.0
                 if volume is None:
@@ -188,9 +194,11 @@ class CSVTickDataFeed:
                     try:
                         dt = _parse_dt(row[col_time], self.time_format)
                     except ValueError:
-                        dt = datetime.utcnow()
+                        skipped += 1
+                        continue   # skip rows with unparseable timestamps
                 else:
-                    dt = datetime.utcnow()
+                    skipped += 1
+                    continue       # skip rows with no timestamp at all
 
                 # --- symbol -------------------------------------------------
                 if self.symbol:
@@ -202,8 +210,7 @@ class CSVTickDataFeed:
 
                 yield TickData(
                     name=name,
-                    bid=bid,
-                    ask=ask,
+                    close=bar_close,
                     volume=volume,
                     time=dt,
                     open=bar_open,

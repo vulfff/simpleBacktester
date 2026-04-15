@@ -59,7 +59,10 @@ Default URLs:
 
 ```
 c:\backtester\
-├── api.py                  # FastAPI app — all HTTP endpoints
+├── api.py                  # FastAPI app — setup, startup, backtest endpoint
+├── routes_ai.py            # AI builder/analyzer endpoints (/ai/*)
+├── routes_data.py          # Data fetch & ticker search (/data/*)
+├── routes_db.py            # DB CRUD endpoints (/db/*)
 ├── engine.py               # Backtest engine (event loop, order queue)
 ├── fill_model.py           # Realistic fill simulation
 ├── metrics.py              # Quantitative performance analytics
@@ -69,11 +72,16 @@ c:\backtester\
 ├── tickdata.py             # TickData dataclass
 ├── csvparser.py            # CSV → TickData parsing
 ├── db.py                   # SQLite helpers (all DB access centralised here)
-├── ai_strategy_builder.py  # LLM-powered strategy generation
+├── ai_strategy_builder.py  # LLM-powered strategy generation; multi-turn _call_api_multi
 ├── ai_indicator_builder.py # LLM-powered indicator expression tree generation
+├── strategy_analyzer.py    # Multi-turn AI chat analyst for strategies
+├── indicator_analyzer.py   # Multi-turn AI chat analyst for indicators
+├── run_analyzer.py         # Multi-turn AI chat analyst for backtest runs
 ├── indicator_registry.py   # Custom indicator store
 ├── actionmanager.py        # Action/order management
+├── seed_prebuilts.py       # Idempotent seed — 5 strategies + 13 indicators
 ├── backtester.db           # SQLite database (auto-created)
+├── tests/                  # pytest test suite (metrics, fill_model, csvparser, engine)
 └── frontend/
     ├── src/
     │   ├── App.jsx              # Root — tab navigation
@@ -84,7 +92,8 @@ c:\backtester\
     │   ├── IndicatorBuilder.jsx # Expression tree builder + AI indicator chat
     │   ├── KeyManager.jsx       # Multi-key API key manager
     │   ├── AIStrategyChat.jsx   # Chat UI for AI strategy generation
-    │   └── AIIndicatorChat.jsx  # Chat UI for AI indicator generation
+    │   ├── AIIndicatorChat.jsx  # Chat UI for AI indicator generation
+    │   └── Analyzer.jsx         # Strategy/indicator/run AI analysis chat
     └── package.json
 ```
 
@@ -116,6 +125,7 @@ Returns a dict of quantitative metrics:
 | `max_drawdown_pct` | Maximum peak-to-trough drawdown |
 | `sharpe_ratio` | Annualised Sharpe (risk-free = 0) |
 | `sortino_ratio` | Downside deviation variant of Sharpe |
+| `calmar_ratio` | CAGR / |max drawdown| (0 when no drawdown) |
 | `win_rate_pct` | % trades closed in profit |
 | `profit_factor` | Gross profit / gross loss (null if no losing trades) |
 | `total_trades` | Number of round-trip trades |
@@ -155,11 +165,24 @@ Custom indicator store and expression tree evaluator.
 | Bollinger(n) | n |
 | MACD(fast, slow, signal) | slow + signal |
 | Lookback(n) | n + 1 |
+| HighestHigh(n) | n |
+| LowestLow(n) | n |
+| ATR(n) | n + 1 |
+| TypicalPrice | 1 |
 
 ### `db.py`
 All SQLite access is centralised here. Never import `sqlite3` directly elsewhere.
-- `ensure_db()` / `create_tables()` — idempotent schema setup (called at startup)
+- `db_conn(commit=False)` — context manager that guarantees connection close; auto-commits on clean exit when `commit=True`
+- `create_tables()` — idempotent schema setup (called at startup)
 - `_sanitize_floats(obj)` — recursively replaces NaN/Inf with None for JSON safety
+
+### `strategy.py`
+Strategy base class, registry (`STRATEGY_REGISTRY`), and `create_strategy()` factory. Only `rule_set` is registered (by `strategy_rules.py`); legacy MA cross / price change strategies have been removed.
+
+### Route Modules
+- **`routes_ai.py`** — AI builder/analyzer endpoints. Uses late import `_decode_key_import()` to avoid circular deps with `api.py`.
+- **`routes_data.py`** — Data fetch proxy (`/data/fetch`) and ticker search (`/data/search-tickers`). All 6 provider implementations.
+- **`routes_db.py`** — CRUD for runs, strategies, indicators, data-keys, model-keys. Uses `_keyring_refs()` late import for keyring access.
 
 ---
 
@@ -182,6 +205,7 @@ All SQLite access is centralised here. Never import `sqlite3` directly elsewhere
 |---|---|---|
 | POST | `/ai/build-strategy` | Generate strategy rules from a natural language prompt |
 | POST | `/ai/build-indicator` | Generate an indicator expression tree from a prompt |
+| POST | `/ai/analyze` | Multi-turn AI chat about a saved strategy or indicator (body: `{subject_type, subject_id, messages, temperature}`) |
 | POST | `/ai/list-models` | Fetch live model list from a provider's API (body: `{provider, api_key}`) |
 | GET | `/ai/schema` | Strategy schema + supported providers/models |
 | GET | `/ai/indicator-schema` | Indicator expression tree schema |
@@ -202,6 +226,8 @@ All SQLite access is centralised here. Never import `sqlite3` directly elsewhere
 | GET | `/db/runs` | List all backtest runs (metadata + metrics, no equity curve) |
 | GET | `/db/runs/{id}` | Get a full run (includes equity curve + trade log) |
 | DELETE | `/db/runs/{id}` | Delete a run |
+| DELETE | `/db/runs` | Delete all runs |
+| POST | `/db/runs/batch-delete` | Delete multiple runs by id (body: `{"ids": [1,2,3]}`) |
 
 ### API Keys — Data Providers
 | Method | Path | Description |
@@ -230,12 +256,13 @@ All SQLite access is centralised here. Never import `sqlite3` directly elsewhere
 ## Frontend — Components
 
 ### `App.jsx`
-Root component. Renders a tab strip with 5 tabs:
+Root component. Renders a tab strip with 6 tabs:
 1. **Backtest** — main workflow
 2. **Analytics** — historical runs
 3. **Strategy Builder** — rule editor
 4. **Indicator Builder** — expression tree editor
-5. **Key Manager** — API key management
+5. **Analyzer** — AI chat for strategy/indicator assessment
+6. **Key Manager** — API key management
 
 ### `Backtest.jsx`
 Main page. Two data source modes:
@@ -254,6 +281,7 @@ Features:
 - Main area: equity curve chart (Recharts `LineChart`) + drawdown overlay
 - **Compare mode** — overlay up to 5 runs on the same chart (colours from `RUN_COLORS`)
 - Metrics grid: all `compute_metrics` fields displayed as stat cards
+- **AI Analysis tab** — 4th tab in the run detail panel; inline multi-turn chat about the selected run via `POST /ai/analyze` with `subject_type: "run"`; 8 quick-prompt chips; chat resets on run change
 
 ### `StrategyBuilder.jsx`
 Two modes (tab strip):
@@ -392,11 +420,12 @@ CREATE TABLE backtest_runs (
     params_json TEXT,               -- full params dict
     metrics_json TEXT,              -- compute_metrics output
     equity_curve_json TEXT,         -- [{timestamp, value}, ...]
-    trade_log_json TEXT             -- [{entry, exit, pnl, ...}, ...]
+    trade_log_json TEXT,            -- [{entry, exit, pnl, ...}, ...]
+    signal_log_json TEXT            -- [{t, symbol, action, blocked}, ...]
 );
 ```
 
-**Deduplication**: runs with identical strategy config + ticker + dates + cash get the same `strategy_hash` (SHA-256). Duplicate runs return the existing `id` without re-inserting.
+**Deduplication**: `strategy_hash` is SHA-256 of strategy config + ticker + dates + cash + `run_at` timestamp. Since `run_at` is always unique, every run creates a new row (no dedup suppression).
 
 ---
 
@@ -435,7 +464,7 @@ These options are passed through the API form fields, applied in `engine.py`, an
 
 All providers return rows shaped as:
 ```python
-{"timestamp": str, "open": float, "high": float, "low": float, "bid": float, "ask": float, "volume": float, "symbol": str}
+{"timestamp": str, "open": float, "high": float, "low": float, "close": float, "volume": float, "symbol": str}
 ```
 
 | Provider ID | Notes | Search API |
@@ -449,7 +478,7 @@ All providers return rows shaped as:
 
 Ticker search endpoint: `GET /data/search-tickers?q=QUERY` → `{"results": [{"symbol": str, "name": str}]}`
 
-**Key handling**: keys stored as base64. On decode, `.strip()` is applied to remove accidental whitespace (common copy-paste issue).
+**Key handling**: unprotected keys migrated to OS keychain (`keyring` library) at startup; DB stores `"keychain"` sentinel. Legacy base64 and password-encrypted keys also supported. On decode, `.strip()` is applied to remove accidental whitespace (common copy-paste issue).
 
 ---
 
@@ -477,6 +506,24 @@ Endpoint: `POST /ai/build-indicator`
 - System prompt includes "Parameter Overridability" section: instructs AI to put thresholds/multipliers in `const` nodes and always include explicit `period` params, maximising per-use overridability
 
 Both chat UIs display the active model name as a pill badge in the header. Shows "No AI model configured" if no model key is saved.
+
+### AI Analyzer
+Endpoint: `POST /ai/analyze`
+- Accepts: `{subject_type: "strategy"|"indicator"|"run", subject_id: int, messages: [{role, content},...], temperature: float, password: str|null}`
+- Fetches the full strategy/indicator definition or run report from DB and injects it into the system prompt
+- Returns: `{reply: str}` — plain-text AI response for the current turn
+- Temperature fixed at **0.2** (frontend constant) for objective, analytical output
+- Multi-turn: the full `messages` history is sent each request; AI maintains context without re-loading the definition
+
+**`strategy_analyzer.py`**: `STRATEGY_ANALYST_PROMPT` instructs the AI to be factual and balanced — identify both strengths and weaknesses equally, flag structural problems (missing exits, unbounded risk, overfitting risk, parameter sensitivity). Function: `analyze_strategy_chat(strategy_data, messages, provider, temperature)`.
+
+**`indicator_analyzer.py`**: `INDICATOR_ANALYST_PROMPT` instructs the AI to derive all conclusions from the expression tree, state output value ranges precisely, and flag edge cases (warmup, divide-by-zero, clamp saturation). Function: `analyze_indicator_chat(indicator_data, messages, provider, temperature)`.
+
+**`run_analyzer.py`**: `RUN_ANALYST_PROMPT` instructs the AI to be objective and factual — flag poor risk-adjusted returns, high drawdown, insufficient trade count, compare to buy-and-hold, note execution impacts. Injects a summarized run report (all metrics, full trade log, equity summary stats, signal counts) — raw `equity_curve` array is excluded and replaced with `equity_summary` to keep prompt size manageable. Function: `analyze_run_chat(run_data, messages, provider, temperature)`.
+
+**`Analyzer.jsx`**: Left panel (Strategies | Indicators tabs + scrollable list) + right chat panel. Built-in quick-prompt chips appear above the input box — 8 strategy-specific and 8 indicator-specific prompts. No creativity slider (temperature is hardcoded to 0.2). Amber accent color (`#f59e0b`). Prompts fire directly without appearing in the textarea.
+
+**`Analytics.jsx` AI Analysis tab**: Within the run detail panel, a 4th tab "✦ AI Analysis" appears alongside Equity Curve / Drawdown / Asset Price. Contains an inline multi-turn chat against the selected run (`subject_type: "run"`). 8 quick-prompt chips shown when chat is empty. Chat resets when switching runs. Shows a "No AI model configured" notice if no active model key is saved.
 
 ---
 
@@ -522,6 +569,21 @@ Only one key per table can be `active=1` at a time.
 
 ---
 
+## Testing
+
+```bash
+python -m pytest tests/ -v
+```
+
+| Module | Tests | Coverage |
+|---|---|---|
+| `test_metrics.py` | `compute_metrics` (return, drawdown, win rate, round-trip count), `match_round_trips_from_dicts` (long/short, partial fills, multi-symbol) |
+| `test_fill_model.py` | Adverse pricing, liquidity limits, zero-volume fallback, open-price fills, seed determinism |
+| `test_csvparser.py` | OHLCV parsing, column aliases, custom maps, missing column errors, bad-row skipping |
+| `test_engine.py` | Equity curve generation, trade execution, tick counting, all-in sizing, signal log |
+
+---
+
 ## Known Bugs & Fixes Applied
 
 | Bug | Fix |
@@ -551,3 +613,42 @@ Only one key per table can be `active=1` at a time.
 | Built-in strategies and indicators could be deleted | `is_builtin INTEGER DEFAULT 0` column added to both tables; `DELETE` endpoints return 403 for built-in rows; `seed_prebuilts.seed()` sets `is_builtin=1`; frontend hides "Delete" / "Delete Strategy" buttons for built-in records |
 | `AIStrategyChat.jsx` model name badge never showed (called non-existent `GET /db/api_keys`) | Changed to `GET /db/model-keys`; finds the key with `active: true` to display its `model_name` |
 | Custom indicator conditions in StrategyBuilder had no UI for adjusting internal values | Added `CustomOperandPanel` + `getEditableParams()` in StrategyBuilder; `overrides` dict on `CustomIndicatorOperand`; `_eval_node` applies overrides at runtime; AI strategy builder context includes param paths and auto-populates defaults |
+| `time_of_day` exit compared the value (minutes 0-1439) against `tick.time.hour` (0-23) — never matched | Changed to `tick.time.hour * 60 + tick.time.minute` |
+| Bollinger Bands and Sharpe/Sortino used population variance (÷N) | Changed to sample variance (÷(N-1)) |
+| ATR used a simple mean of true ranges instead of Wilder's smoothing | Replaced with seed-SMA + RMA: `atr = (prev*(period-1)+TR)/period` |
+| EMA recomputed from the full price buffer O(n) on every tick | Added `_ema_state`/`_ema_last_tick` dicts for O(1) incremental updates; state included in `_SnapShot` |
+| `time_of_day` missing from `OPERAND_SCHEMA` — not selectable as a condition in the UI | Added entry `"time_of_day": {"params": []}` |
+| `_SnapShot` omitted `_macd_last_tick`, `_tick_count`, `_ema_state`, `_ema_last_tick` — MACD/EMA state lost on snapshot restore | All four dicts now copied in `_SnapShot.__init__` |
+| `compute_metrics` always used `bars_per_year=252` regardless of timeframe — weekly/hourly Sharpe/CAGR wrong | Added `_BARS_PER_YEAR` dict and `_bars_per_year(timeframe)` helper in `api.py` |
+| Round-trip P&L ignored commission — overstated `profit_factor`/`win_rate` | `_match_round_trips` now prorates entry + exit commission per matched lot |
+| CAGR returned `0%` on total-loss scenarios | Added `last_eq <= 0` branch returning `-100.0` |
+| Max drawdown included warmup bars and pre-trade cash drift | Gated on `asset_value != 0`; peak resets at each new position entry (in both `metrics.py` and `Analytics.jsx buildDrawdown`) |
+| `profit_factor=Infinity` in live `/backtest/upload` response → invalid JSON | Set to `None` directly in `compute_metrics` (not just on DB save) |
+| Multi-symbol backtest: all pending orders filled against one tick's prices | `_fill_pending_at_open` filters to orders matching `tick.name`; others remain queued |
+| Equity curve recorded `tick.bid` instead of mid-price | Changed to `(tick.bid + tick.ask) / 2 if tick.ask else tick.bid` |
+| Asymmetric slippage: buys could receive favourable slip, sells always `abs()` | Buy fill price changed to `base + impact + abs(slippage)` |
+| Trade log recorded full order quantity, not actual executed quantity for partial fills | `portfolio.py` sets `quantity = sold` / `quantity = cover_qty` before appending to trade log |
+| Unparseable CSV timestamps silently replaced with `datetime.utcnow()`, corrupting time series | Changed to `skipped += 1; continue` |
+| Non-UTF8 CSV files crashed with unhandled `UnicodeDecodeError` | Added encoding fallback loop: `utf-8-sig` → `cp1252` → `latin-1` |
+| Yahoo Finance empty result returned silently with no error | Added check for empty `results`; raises `HTTPException(404)` |
+| `allow_credentials=True` + wildcard `allow_origins=["*"]` — browsers reject per spec | Changed to `allow_credentials=bool(_RAW_ORIGINS)` |
+| `POST /db/indicators` deleted all indicators before re-insert with no transaction — data loss on failure | Wrapped in `try/except/rollback/finally` |
+| `POST /db/strategies` UPDATE path could overwrite built-in strategies | Added `is_builtin` check; built-in rows skipped with `continue` |
+| Batch delete dropped JS float-encoded IDs (e.g. `"3.0"`) via `str(i).isdigit()` check | Changed to `int(float(i))` |
+| `_rows_to_csv` crashed when rows had inconsistent keys | Collects all keys via union; uses `extrasaction="ignore"` on `DictWriter` |
+| `AIIndicatorChat` called `/db/api_keys` (wrong endpoint) + wrong response shape | Changed to `GET /db/model-keys`; extracts `active?.model_name` from `d.keys` |
+| No validation that selected model matched key provider — silent failure | `ModelKeyPanel.save()` checks provider mismatch and shows descriptive error |
+| `activate`/`remove` in `KeyManager` had no error handling | Wrapped in `try/catch` with `r.ok` checks |
+| DB connections leaked on exception — no `try/finally` for `conn.close()` | Added `try/finally: conn.close()` to `create_tables`, `list_runs`, `get_run` |
+| `equity_curve`/`trade_log` defaulted to `{}` (dict) when NULL in DB | Changed default to `[]` for list fields |
+| ALTER TABLE migration failures silently swallowed with bare `except: pass` | Only ignores `OperationalError` with "duplicate column"; re-raises others |
+| `useEffect` in `StrategyBuilder` missing `selectedRole` dependency | Added `selectedRole` to the dependency array |
+| Save optimistic update missing server `id` — newly saved strategy couldn't be deleted without refresh | Changed to re-fetch strategies after save to obtain real `id` |
+| Right-side operand in `StrategyBuilder` ignored `custom` indicator type | Added `type === 'custom'` check; renders `CustomOperandPanel` for right side |
+| `aiGeneratedIndicator` not cleared after adding — double-add possible | Added `setAiGeneratedIndicator(null)` in `addAiIndicator` |
+| Empty indicators (no blocks) saved to DB with `expr: null` | Added `.filter(ind => ind.blocks?.length > 0)` before save payload mapping |
+| Trade timestamp not shown in Analytics trade log table | Added Time column rendering `String(t.t).slice(0, 19)` |
+| Delete operations cleared UI state optimistically even on server failure | `deleteRun`, `deleteBatch`, `deleteAll` now check `r.ok` and throw before mutating state |
+| `toggleCompare` race condition: rapid clicks caused duplicate fetches via stale closure | Added `_compareFetching = useRef(new Set())` in-flight guard; functional `setCompareData` update |
+| `column_map` sent to `/backtest/upload` missing `open`/`high`/`low` — ATR/highest_high/lowest_low received `NaN` | Added `open:'open', high:'high', low:'low'` to the column map |
+| `AIStrategyChat` errors shown twice (chat bubble + bottom error box) | Removed `setError` call from catch block; errors appear only as chat bubbles |

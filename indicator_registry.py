@@ -358,7 +358,7 @@ def node_ifelse(cond_left: Dict, cond_op: str, cond_right: Dict,
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Example: Momentum = mid - mid[5]
+    # Example: Momentum = close - close[5]
     from strategy_rules import PriceSeries, TickData  # type: ignore
 
     INDICATOR_REGISTRY.load([{
@@ -367,8 +367,8 @@ if __name__ == "__main__":
         "color": "#34d399",
         "expr": node_binop(
             "-",
-            node_operand({"type": "price", "field": "mid"}),
-            node_operand({"type": "lookback", "field": "mid", "period": 5}),
+            node_operand({"type": "price", "field": "close"}),
+            node_operand({"type": "lookback", "field": "close", "period": 5}),
         ),
     }])
 

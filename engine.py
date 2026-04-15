@@ -103,8 +103,7 @@ class BacktestEngine:
     def _handle_tick(self, event: TickEvent) -> None:
         tick = event.tick
         self._last_tick[tick.name] = tick
-        mid = (tick.bid + tick.ask) / 2 if tick.ask else tick.bid
-        self.portfolio.update_market_price(tick.name, mid)
+        self.portfolio.update_market_price(tick.name, tick.close)
 
         # Keep strategy in sync with live portfolio state so exit conditions
         # (P&L-based, time-based) and position guards can query it.
@@ -161,14 +160,14 @@ class BacktestEngine:
 
     def _fill_pending_at_open(self, tick: TickData) -> None:
         """
-        Fill all queued orders at this bar's open price using the fill model.
-        Called at the very start of each bar before strategy evaluation.
+        Fill queued orders for this tick's symbol at its open price.
+        Orders for other symbols remain pending until their own symbol's tick arrives.
         """
         if not self._pending_orders:
             return
 
-        orders_to_process = self._pending_orders
-        self._pending_orders = []
+        orders_to_process = [o for o in self._pending_orders if o.symbol == tick.name]
+        self._pending_orders = [o for o in self._pending_orders if o.symbol != tick.name]
 
         for order in orders_to_process:
             # ── All-in sizing: override quantity from portfolio state ──────────
@@ -179,9 +178,7 @@ class BacktestEngine:
                     existing_pos = self.portfolio.positions.get(order.symbol, 0.0)
                     if abs(existing_pos) > 1e-9:
                         continue
-                    base_price = tick.open if tick.open > 0 else (
-                        tick.ask if order.action == "buy" else tick.bid
-                    )
+                    base_price = tick.open if tick.open > 0 else tick.close
                     available_cash = max(0.0, self.portfolio.cash) * self.leverage
                     computed_qty = available_cash / base_price if base_price > 0 else 0.0
                     if computed_qty <= 1e-9:
@@ -264,5 +261,5 @@ class BacktestEngine:
             "equity":      round(self.portfolio.total_value(), 4),
             "cash":        round(self.portfolio.cash, 4),
             "asset_value": round(self.portfolio.asset_value, 4),
-            "price":       round(tick.bid, 4),
+            "price":       round(tick.close, 4),
         })

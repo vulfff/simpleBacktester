@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AIIndicatorChat } from './AIIndicatorChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
@@ -10,9 +11,7 @@ const BLOCKS = [
     category: "Price Data",
     color: "#22d3ee",
     items: [
-      { type: "operand", opType: "price", field: "mid",    label: "Current Price (mid)",    desc: "The average of bid and ask — the 'real' price", emoji: "💰" },
-      { type: "operand", opType: "price", field: "bid",    label: "Bid Price",              desc: "What buyers are willing to pay", emoji: "📉" },
-      { type: "operand", opType: "price", field: "ask",    label: "Ask Price",              desc: "What sellers want to receive", emoji: "📈" },
+      { type: "operand", opType: "price", field: "close",  label: "Close Price",            desc: "The bar's closing price — the main price used by most indicators", emoji: "💰" },
       { type: "operand", opType: "price", field: "high",   label: "Bar High",               desc: "The highest price reached in the bar", emoji: "⬆️" },
       { type: "operand", opType: "price", field: "low",    label: "Bar Low",                desc: "The lowest price reached in the bar", emoji: "⬇️" },
       { type: "operand", opType: "price", field: "volume", label: "Volume",                 desc: "How many units were traded", emoji: "📊" },
@@ -23,22 +22,22 @@ const BLOCKS = [
     category: "Past Values",
     color: "#f59e0b",
     items: [
-      { type: "operand", opType: "lookback", field: "mid", period: 1,  label: "Price N bars ago",   desc: "The price from N candles back — useful for detecting changes", emoji: "⏮️" },
+      { type: "operand", opType: "lookback", field: "close", period: 1,  label: "Price N bars ago",   desc: "The close price from N candles back — useful for detecting changes", emoji: "⏮️" },
     ]
   },
   {
     category: "Averages",
     color: "#34d399",
     items: [
-      { type: "operand", opType: "sma", field: "mid", period: 20, label: "Simple Moving Average (SMA)", desc: "The plain average price over the last N bars. Smooth, but slow to react.", emoji: "〰️" },
-      { type: "operand", opType: "ema", field: "mid", period: 20, label: "Exponential Moving Average (EMA)", desc: "Like SMA, but recent prices count more. Faster to react to changes.", emoji: "⚡" },
+      { type: "operand", opType: "sma", field: "close", period: 20, label: "Simple Moving Average (SMA)", desc: "The plain average close price over the last N bars. Smooth, but slow to react.", emoji: "〰️" },
+      { type: "operand", opType: "ema", field: "close", period: 20, label: "Exponential Moving Average (EMA)", desc: "Like SMA, but recent closes count more. Faster to react to changes.", emoji: "⚡" },
     ]
   },
   {
     category: "Momentum & Oscillators",
     color: "#a78bfa",
     items: [
-      { type: "operand", opType: "rsi", field: "mid", period: 14, label: "RSI (Relative Strength Index)", desc: "Measures how overbought or oversold an asset is. Ranges 0–100. Above 70 = overbought, below 30 = oversold.", emoji: "🔄" },
+      { type: "operand", opType: "rsi", field: "close", period: 14, label: "RSI (Relative Strength Index)", desc: "Measures how overbought or oversold an asset is. Ranges 0–100. Above 70 = overbought, below 30 = oversold.", emoji: "🔄" },
       { type: "operand", opType: "macd", fast: 12, slow: 26, signal: 9, component: "macd",   label: "MACD Line",         desc: "Shows the difference between two EMAs. Crossing zero signals trend changes.", emoji: "📡" },
       { type: "operand", opType: "macd", fast: 12, slow: 26, signal: 9, component: "signal", label: "MACD Signal Line",  desc: "A smoothed version of the MACD. When MACD crosses above signal, bullish signal.", emoji: "🎯" },
       { type: "operand", opType: "macd", fast: 12, slow: 26, signal: 9, component: "hist",   label: "MACD Histogram",    desc: "The gap between MACD and its signal line. Growing = strengthening trend.", emoji: "📉" },
@@ -57,11 +56,11 @@ const BLOCKS = [
     category: "Volatility",
     color: "#f472b6",
     items: [
-      { type: "operand", opType: "bollinger", field: "mid", period: 20, std_dev: 2, component: "upper",  label: "Bollinger Upper Band",  desc: "Price ceiling — asset is 'expensive' when near here", emoji: "⬆️" },
-      { type: "operand", opType: "bollinger", field: "mid", period: 20, std_dev: 2, component: "lower",  label: "Bollinger Lower Band",  desc: "Price floor — asset is 'cheap' when near here", emoji: "⬇️" },
-      { type: "operand", opType: "bollinger", field: "mid", period: 20, std_dev: 2, component: "middle", label: "Bollinger Middle Band",  desc: "The SMA in the center of Bollinger Bands", emoji: "➖" },
-      { type: "operand", opType: "bollinger", field: "mid", period: 20, std_dev: 2, component: "width",  label: "Bollinger Width",       desc: "How wide the bands are — high = high volatility", emoji: "↔️" },
-      { type: "operand", opType: "bollinger", field: "mid", period: 20, std_dev: 2, component: "pct_b",  label: "Bollinger %B",          desc: "Where price is within the bands (0 = lower, 1 = upper)", emoji: "📍" },
+      { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "upper",  label: "Bollinger Upper Band",  desc: "Price ceiling — asset is 'expensive' when near here", emoji: "⬆️" },
+      { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "lower",  label: "Bollinger Lower Band",  desc: "Price floor — asset is 'cheap' when near here", emoji: "⬇️" },
+      { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "middle", label: "Bollinger Middle Band",  desc: "The SMA in the center of Bollinger Bands", emoji: "➖" },
+      { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "width",  label: "Bollinger Width",       desc: "How wide the bands are — high = high volatility", emoji: "↔️" },
+      { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "pct_b",  label: "Bollinger %B",          desc: "Where price is within the bands (0 = lower, 1 = upper)", emoji: "📍" },
     ]
   },
   {
@@ -162,13 +161,14 @@ function describeNode(n) {
 }
 
 // ─── Param editing for a placed block ────────────────────────────────────────
-const PRICE_FIELDS = ['bid', 'ask', 'mid', 'high', 'low', 'volume'];
+const PRICE_FIELDS = ['close', 'high', 'low', 'volume'];
 
 function BlockParams({ node, onChange }) {
+  const { t } = useTranslation();
   if (!node) return null;
   if (node.type === 'const') return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Value:</span>
+      <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.value')}</span>
       <input type="number" value={node.value} style={inputStyle}
         onChange={e => onChange({ ...node, value: parseFloat(e.target.value) || 0 })} />
     </label>
@@ -180,57 +180,57 @@ function BlockParams({ node, onChange }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       {node.opType && ['price', 'lookback', 'sma', 'ema', 'rsi', 'bollinger', 'highest_high', 'lowest_low'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Price type:</span>
-          <select value={node.field || 'mid'} style={selectStyle} onChange={e => set('field', e.target.value)}>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.priceType')}</span>
+          <select value={node.field || 'close'} style={selectStyle} onChange={e => set('field', e.target.value)}>
             {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
           </select>
         </label>
       )}
       {node.opType && ['lookback','sma','ema','rsi','bollinger','highest_high','lowest_low','atr'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Period (bars):</span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.periodBars')}</span>
           <input type="number" value={node.period || 14} min={1} style={inputStyle}
             onChange={e => set('period', parseInt(e.target.value) || 1)} />
         </label>
       )}
       {node.opType === 'bollinger' && <>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Std Dev:</span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.stdDev')}</span>
           <input type="number" value={node.std_dev || 2} min={0.1} step={0.1} style={inputStyle}
             onChange={e => set('std_dev', parseFloat(e.target.value) || 2)} />
         </label>
       </>}
       {node.opType === 'macd' && <>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Fast:</span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.fast')}</span>
           <input type="number" value={node.fast || 12} min={1} style={inputStyle}
             onChange={e => set('fast', parseInt(e.target.value) || 12)} />
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Slow:</span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.slow')}</span>
           <input type="number" value={node.slow || 26} min={1} style={inputStyle}
             onChange={e => set('slow', parseInt(e.target.value) || 26)} />
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Signal:</span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.signal')}</span>
           <input type="number" value={node.signal || 9} min={1} style={inputStyle}
             onChange={e => set('signal', parseInt(e.target.value) || 9)} />
         </label>
       </>}
       {node.type === 'binop' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Left:</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.left')}</span>
         <NodeMiniPicker node={node.left} onSet={v => onChange({ ...node, left: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Right:</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.right')}</span>
         <NodeMiniPicker node={node.right} onSet={v => onChange({ ...node, right: v })} />
       </>}
       {node.type === 'unop' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Input:</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.input')}</span>
         <NodeMiniPicker node={node.child} onSet={v => onChange({ ...node, child: v })} />
       </>}
       {node.type === 'ifelse' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.78rem', color: '#9ca3af', minWidth: 30 }}>If</span>
+            <span style={{ fontSize: '0.78rem', color: '#9ca3af', minWidth: 30 }}>{t('indicator.if')}</span>
             <NodeMiniPicker node={node.cond_left}  onSet={v => onChange({ ...node, cond_left: v })} />
             <select value={node.cond_op || '>'} style={selectStyle}
               onChange={e => onChange({ ...node, cond_op: e.target.value })}>
@@ -239,21 +239,21 @@ function BlockParams({ node, onChange }) {
             <NodeMiniPicker node={node.cond_right} onSet={v => onChange({ ...node, cond_right: v })} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: '#34d399', minWidth: 30 }}>Then</span>
+            <span style={{ fontSize: '0.78rem', color: '#34d399', minWidth: 30 }}>{t('indicator.then')}</span>
             <NodeMiniPicker node={node.then}  onSet={v => onChange({ ...node, then: v })} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: '#f87171', minWidth: 30 }}>Else</span>
+            <span style={{ fontSize: '0.78rem', color: '#f87171', minWidth: 30 }}>{t('indicator.else')}</span>
             <NodeMiniPicker node={node.else_} onSet={v => onChange({ ...node, else_: v })} />
           </div>
         </div>
       )}
       {node.type === 'clamp' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Value</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.value')}</span>
         <NodeMiniPicker node={node.value} onSet={v => onChange({ ...node, value: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Min</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.min')}</span>
         <NodeMiniPicker node={node.lo}    onSet={v => onChange({ ...node, lo: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>Max</span>
+        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.max')}</span>
         <NodeMiniPicker node={node.hi}    onSet={v => onChange({ ...node, hi: v })} />
       </>}
     </div>
@@ -261,6 +261,7 @@ function BlockParams({ node, onChange }) {
 }
 
 function NodeMiniPicker({ node, onSet }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const allItems = BLOCKS.flatMap(b => b.items.map(i => ({ ...i, catColor: b.color })));
   const set = (k, v) => onSet({ ...node, [k]: v });
@@ -277,7 +278,7 @@ function NodeMiniPicker({ node, onSet }) {
         </button>
         {open && (
           <div style={{ position: 'absolute', zIndex: 99, top: '100%', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 10, padding: 6, width: 260, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-            <div style={{ fontSize: '0.7rem', color: '#6b7280', padding: '2px 4px 6px' }}>Choose a block:</div>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', padding: '2px 4px 6px' }}>{t('indicator.chooseBlock')}</div>
             {allItems.map((item, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
@@ -292,7 +293,7 @@ function NodeMiniPicker({ node, onSet }) {
                 onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 onClick={() => { onSet(makeNode({ type: 'const', value: 0 })); setOpen(false); }}>
-                <span>🔢</span><span style={{ color: '#e5e7eb' }}>Fixed Number</span>
+                <span>🔢</span><span style={{ color: '#e5e7eb' }}>{t('indicator.fixedNumber')}</span>
               </div>
             </div>
           </div>
@@ -309,7 +310,7 @@ function NodeMiniPicker({ node, onSet }) {
           onChange={e => set('period', parseInt(e.target.value) || 1)} />
       )}
       {hasField && (
-        <select title="Price field" value={node.field || 'mid'} style={{ ...selectStyle, fontSize: '0.72rem', padding: '2px 4px' }}
+        <select title="Price field" value={node.field || 'close'} style={{ ...selectStyle, fontSize: '0.72rem', padding: '2px 4px' }}
           onChange={e => set('field', e.target.value)}>
           {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
         </select>
@@ -348,6 +349,7 @@ const pillStyle = { background: '#1e293b', border: '1px solid #334155', borderRa
 
 // ─── Group block — mini-canvas for parenthesised sub-expressions ──────────────
 function GroupBlock({ node, onUpdate, onRemove }) {
+  const { t } = useTranslation();
   const handleDrop = e => {
     try {
       const raw = JSON.parse(e.dataTransfer.getData('block'));
@@ -391,7 +393,7 @@ function GroupBlock({ node, onUpdate, onRemove }) {
           <div key={b._id}>
             {idx > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
-                <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>combine with</span>
+                <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('indicator.combineWith')}</span>
                 <select
                   value={(node.ops || [])[idx - 1] || '+'}
                   style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}
@@ -410,6 +412,7 @@ function GroupBlock({ node, onUpdate, onRemove }) {
 
 // ─── Placed block pill in the canvas ─────────────────────────────────────────
 function PlacedBlock({ node, onUpdate, onRemove }) {
+  const { t } = useTranslation();
   if (node.type === 'group') return <GroupBlock node={node} onUpdate={onUpdate} onRemove={onRemove} />;
 
   const [expanded, setExpanded] = useState(false);
@@ -431,7 +434,7 @@ function PlacedBlock({ node, onUpdate, onRemove }) {
         <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem', color: '#e5e7eb' }}>{label}</span>
         <button style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '0.8rem', padding: '2px 6px' }}
           onClick={() => setExpanded(e => !e)}>
-          {expanded ? '▲ less' : '▼ configure'}
+          {expanded ? t('indicator.lessLabel') : t('indicator.configure')}
         </button>
         <button style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 6, color: '#ef4444', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
           onClick={onRemove}>✕</button>
@@ -448,6 +451,7 @@ function PlacedBlock({ node, onUpdate, onRemove }) {
 
 // ─── Drop Zone ────────────────────────────────────────────────────────────────
 function DropZone({ onDrop, children, isEmpty }) {
+  const { t } = useTranslation();
   const [over, setOver] = useState(false);
   return (
     <div
@@ -465,7 +469,7 @@ function DropZone({ onDrop, children, isEmpty }) {
       {isEmpty && !over && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: '#374151', fontSize: '0.85rem', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontSize: '1.5rem' }}>🧩</span>
-          <span>Drag blocks here to build your indicator</span>
+          <span>{t('indicator.dragBlocks')}</span>
         </div>
       )}
       {children}
@@ -499,6 +503,7 @@ function PaletteItem({ item, catColor }) {
 let _indId = 1;
 
 export default function IndicatorBuilder() {
+  const { t } = useTranslation();
   const [indicators, setIndicators] = useState([]);
   const [activeId, setActiveId]     = useState(null);
   const [loading, setLoading]       = useState(false);
@@ -536,7 +541,7 @@ export default function IndicatorBuilder() {
         setIndicators(loaded);
         if (loaded.length) setActiveId(loaded[0]._id);
       })
-      .catch(() => setError('Failed to load indicators'))
+      .catch(() => setError(t('indicator.failedLoad')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -565,6 +570,7 @@ export default function IndicatorBuilder() {
     };
     setIndicators(p => [...p, ind]);
     setActiveId(ind._id);
+    setAiGeneratedIndicator(null);   // prevent double-add
     setMode('build');
   };
 
@@ -605,18 +611,18 @@ export default function IndicatorBuilder() {
 
   const save = async () => {
     const invalid = indicators.find(i => !i.name.trim());
-    if (invalid) { setError('All indicators need a name.'); return; }
+    if (invalid) { setError(t('indicator.allNeedName')); return; }
     setError(''); setSaving(true);
     try {
-      const payload = indicators.filter(ind => !ind.is_builtin).map(ind => ({
+      const payload = indicators.filter(ind => !ind.is_builtin && ind.blocks?.length > 0).map(ind => ({
         name: ind.name,
         description: ind.description,
         color: ind.color,
         expr: buildExpr(ind.blocks, ind.ops || []),
       }));
       await fetch(`${API_BASE}/db/indicators`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ indicators: payload }) });
-      alert('Indicators saved!');
-    } catch { setError('Failed to save.'); }
+      alert(t('indicator.indicatorsSaved'));
+    } catch { setError(t('indicator.failedSave')); }
     finally { setSaving(false); }
   };
 
@@ -634,22 +640,22 @@ export default function IndicatorBuilder() {
         .ib2-main { flex: 1; min-width: 0; max-height: calc(100vh - 200px); overflow-y: auto; }
         @media (max-width: 700px) { .ib2-wrap { flex-direction: column; } .ib2-palette { width: 100%; position: static; max-height: 320px; } }
       `}</style>
-      <h2>Indicator Builder</h2>
-      <p>Drag building blocks onto your indicator canvas. Each indicator is a reusable signal you can reference in your strategies.</p>
+      <h2>{t('indicator.title')}</h2>
+      <p>{t('indicator.subtitle')}</p>
 
       {/* Mode selector */}
       <div className="tab-strip" style={{ margin: '1.5rem 0 1rem', width: 'fit-content' }}>
         <button className={`tab-btn${mode === 'build' ? ' active' : ''}`} onClick={() => setMode('build')}>
-          ◆ Manual Builder
+          {t('indicator.manualBuilder')}
         </button>
         <button className={`tab-btn${mode === 'ai-indicator' ? ' active' : ''}`} onClick={() => setMode('ai-indicator')}>
-          🤖 AI Indicator
+          {t('indicator.aiIndicator')}
         </button>
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <button style={{ ...pillStyle, background: 'linear-gradient(135deg,#6366f1,#22d3ee)', color: '#0f172a', fontWeight: 700, border: 'none' }} onClick={addIndicator}>
-          + New Indicator
+          {t('indicator.newIndicator')}
         </button>
         {indicators.map(ind => (
           <button key={ind._id}
@@ -661,7 +667,7 @@ export default function IndicatorBuilder() {
         ))}
         {indicators.length > 0 && (
           <button className="btn btn-primary btn-pill" style={{ marginLeft: 'auto' }}
-            onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : 'Save All'}</button>
+            onClick={save} disabled={saving}>{saving ? <><span className="spinner" /> {t('common.saving')}</> : t('indicator.saveAll')}</button>
         )}
       </div>
 
@@ -692,12 +698,12 @@ export default function IndicatorBuilder() {
                   {JSON.stringify(aiGeneratedIndicator.expr, null, 2)}
                 </pre>
                 <button className="btn btn-primary" style={{ width: '100%' }} onClick={addAiIndicator}>
-                  + Add to My Indicators
+                  {t('indicator.addToMyIndicators')}
                 </button>
               </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
-                Generated indicator will appear here
+                {t('indicator.generatedWillAppear')}
               </div>
             )}
           </div>
@@ -707,13 +713,13 @@ export default function IndicatorBuilder() {
       {/* Manual Builder Mode */}
       {mode === 'build' && (
       <>
-      {loading ? <div style={{ color: '#6b7280', textAlign: 'center', padding: 40 }}>Loading…</div> : (
+      {loading ? <div style={{ color: '#6b7280', textAlign: 'center', padding: 40 }}>{t('common.loading')}</div> : (
         <div className="ib2-wrap">
           {/* Palette */}
           <aside className="ib2-palette">
             <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1rem', overflow: 'hidden' }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 10 }}>Building Blocks</div>
-              <input placeholder="Search blocks…" value={filter} onChange={e => setFilter(e.target.value)}
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 10 }}>{t('indicator.buildingBlocks')}</div>
+              <input placeholder={t('indicator.searchBlocks')} value={filter} onChange={e => setFilter(e.target.value)}
                 style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '6px 10px', color: '#e5e7eb', fontSize: '0.82rem', marginBottom: 12, outline: 'none' }} />
               {filteredBlocks.map(cat => (
                 <div key={cat.category} style={{ marginBottom: 14 }}>
@@ -729,7 +735,7 @@ export default function IndicatorBuilder() {
             {!active ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#4b5563', gap: 8 }}>
                 <span style={{ fontSize: '2rem' }}>🧩</span>
-                <span>Create a new indicator to get started</span>
+                <span>{t('indicator.createNew')}</span>
               </div>
             ) : (
               <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
@@ -739,7 +745,7 @@ export default function IndicatorBuilder() {
                     value={active.name}
                     onChange={e => updateActive({ ...active, name: e.target.value })}
                     style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '1.1rem', fontWeight: 700, outline: 'none' }}
-                    placeholder="Indicator name…" />
+                    placeholder={t('indicator.indicatorName')} />
                   <div style={{ display: 'flex', gap: 5 }}>
                     {COLORS.map(c => (
                       <div key={c} onClick={() => updateActive({ ...active, color: c })}
@@ -751,14 +757,14 @@ export default function IndicatorBuilder() {
                       const affected = savedStrategies.filter(s => JSON.stringify(s.config).includes(active.name));
                       if (affected.length > 0) {
                         const names = affected.map(s => `"${s.name}"`).join(', ');
-                        if (!window.confirm(`"${active.name}" is used in ${affected.length} strategy(s): ${names}.\n\nDelete it anyway?`)) return;
+                        if (!window.confirm(t('indicator.deleteUsedConfirm', { name: active.name, count: affected.length, strategies: names }))) return;
                       }
                       deleteIndicator(active._id);
                     }}
-                      style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>Delete</button>
+                      style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>{t('common.delete')}</button>
                   )}
                   {active.is_builtin && (
-                    <span style={{ fontSize: '0.72rem', color: '#4b5563', border: '1px solid #1f2937', borderRadius: 8, padding: '4px 10px' }}>Built-in</span>
+                    <span style={{ fontSize: '0.72rem', color: '#4b5563', border: '1px solid #1f2937', borderRadius: 8, padding: '4px 10px' }}>{t('common.builtin')}</span>
                   )}
                 </div>
 
@@ -766,7 +772,7 @@ export default function IndicatorBuilder() {
                   value={active.description}
                   onChange={e => updateActive({ ...active, description: e.target.value })}
                   style={{ width: '100%', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: '7px 12px', color: '#9ca3af', fontSize: '0.85rem', outline: 'none', marginBottom: 16 }}
-                  placeholder="Optional description…" />
+                  placeholder={t('indicator.optionalDescription')} />
 
                 {/* Formula preview */}
                 {active.blocks.length > 0 && (
@@ -786,7 +792,7 @@ export default function IndicatorBuilder() {
                     <div key={b._id}>
                       {idx > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
-                          <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>combine with</span>
+                          <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('indicator.combineWith')}</span>
                           <select
                             value={active.ops?.[idx - 1] || '+'}
                             style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}

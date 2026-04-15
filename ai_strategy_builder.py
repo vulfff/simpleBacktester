@@ -73,7 +73,7 @@ class StrategySchema:
     ]
 
     # Price fields
-    PRICE_FIELDS = ["bid", "ask", "mid", "high", "low", "volume"]
+    PRICE_FIELDS = ["close", "high", "low", "volume"]
 
     # Exit condition types
     EXIT_CONDITION_TYPES = [
@@ -95,7 +95,7 @@ SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowled
 ## Available Components
 
 ### Price Operands
-- `price`: Current price (fields: bid, ask, mid, volume)
+- `price`: Current price (fields: close, high, low, volume)
 - `constant`: Fixed number values
 - `lookback`: Price or field value from N bars ago
 - `sma`: Simple moving average (configurable period)
@@ -176,27 +176,27 @@ bid, ask, mid, volume
 
 **Current Price:**
 ```json
-{ "type": "price", "field": "mid" }
+{ "type": "price", "field": "close" }
 ```
 
 **Price from N bars ago:**
 ```json
-{ "type": "lookback", "field": "mid", "period": 5 }
+{ "type": "lookback", "field": "close", "period": 5 }
 ```
 
 **Simple Moving Average:**
 ```json
-{ "type": "sma", "field": "mid", "period": 20 }
+{ "type": "sma", "field": "close", "period": 20 }
 ```
 
 **Exponential Moving Average:**
 ```json
-{ "type": "ema", "field": "mid", "period": 9 }
+{ "type": "ema", "field": "close", "period": 9 }
 ```
 
 **RSI (Relative Strength Index):**
 ```json
-{ "type": "rsi", "field": "mid", "period": 14 }
+{ "type": "rsi", "field": "close", "period": 14 }
 ```
 
 **MACD (all three lines must match):**
@@ -206,7 +206,7 @@ bid, ask, mid, volume
 
 **Bollinger Bands:**
 ```json
-{ "type": "bollinger", "field": "mid", "period": 20, "std_dev": 2, "component": "upper|middle|lower" }
+{ "type": "bollinger", "field": "close", "period": 20, "std_dev": 2, "component": "upper|middle|lower" }
 ```
 
 ## Common Pattern Examples
@@ -227,9 +227,9 @@ Exit: Fast SMA crosses below Slow SMA
       "conditions": [
         {
           "kind": "signal",
-          "left": { "type": "sma", "field": "mid", "period": 50 },
+          "left": { "type": "sma", "field": "close", "period": 50 },
           "operator": "cross_above",
-          "right": { "type": "sma", "field": "mid", "period": 200 },
+          "right": { "type": "sma", "field": "close", "period": 200 },
           "combiner": "and"
         }
       ]
@@ -242,9 +242,9 @@ Exit: Fast SMA crosses below Slow SMA
       "conditions": [
         {
           "kind": "signal",
-          "left": { "type": "sma", "field": "mid", "period": 50 },
+          "left": { "type": "sma", "field": "close", "period": 50 },
           "operator": "cross_below",
-          "right": { "type": "sma", "field": "mid", "period": 200 },
+          "right": { "type": "sma", "field": "close", "period": 200 },
           "combiner": "and"
         }
       ]
@@ -269,7 +269,7 @@ Exit: Sell when RSI rises above 70 (overbought) OR after 10 bars
       "conditions": [
         {
           "kind": "signal",
-          "left": { "type": "rsi", "field": "mid", "period": 14 },
+          "left": { "type": "rsi", "field": "close", "period": 14 },
           "operator": "<",
           "right": { "type": "constant", "value": 30 },
           "combiner": "and"
@@ -284,7 +284,7 @@ Exit: Sell when RSI rises above 70 (overbought) OR after 10 bars
       "conditions": [
         {
           "kind": "signal",
-          "left": { "type": "rsi", "field": "mid", "period": 14 },
+          "left": { "type": "rsi", "field": "close", "period": 14 },
           "operator": ">",
           "right": { "type": "constant", "value": 70 },
           "combiner": "and"
@@ -352,6 +352,17 @@ class AIProvider(ABC):
     @abstractmethod
     def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
         """Make API call and return raw text response."""
+        pass
+
+    @abstractmethod
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
+        """Multi-turn chat: accepts full message history and returns plain-text reply.
+
+        Args:
+            messages: List of {"role": "user"|"assistant", "content": str}
+            system_prompt: System/context prompt (prepended to conversation)
+            temperature: Creativity (0.0–1.0)
+        """
         pass
 
     # ── Public: strategy builder convenience ─────────────────────────────────
@@ -560,6 +571,35 @@ class AnthropicProvider(AIProvider):
         except Exception as e:
             raise ValueError(f"Anthropic API error: {e}")
 
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
+        import httpx
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "temperature": temperature,
+        }
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "x-api-key": self.api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            return data["content"][0]["text"].strip()
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Anthropic API error: {e}")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenAI Provider — pure REST, no SDK required
@@ -617,6 +657,39 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             raise ValueError(f"OpenAI API error: {e}")
 
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
+        import httpx
+        is_reasoning = self.model_name.startswith(("o1", "o3", "o4"))
+        full_msgs: list = []
+        if not is_reasoning:
+            full_msgs.append({"role": "system", "content": system_prompt})
+        full_msgs += [{"role": m["role"], "content": m["content"]} for m in messages]
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_completion_tokens": 4096,
+            "messages": full_msgs,
+        }
+        if not is_reasoning:
+            payload["temperature"] = temperature
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"OpenAI API error: {e}")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Grok Provider (xAI) — OpenAI-compatible REST endpoint
@@ -659,6 +732,35 @@ class GrokProvider(AIProvider):
                     "AI response was truncated (max_tokens reached). "
                     "Try a shorter/simpler description."
                 )
+            return data["choices"][0]["message"]["content"].strip()
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Grok API error: {e}")
+
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
+        import httpx
+        full_msgs = [{"role": "system", "content": system_prompt}]
+        full_msgs += [{"role": m["role"], "content": m["content"]} for m in messages]
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "max_tokens": 4096,
+            "messages": full_msgs,
+            "temperature": temperature,
+        }
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    self.BASE_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
         except ValueError:
             raise
@@ -712,6 +814,41 @@ class GeminiProvider(AIProvider):
                     "AI response was truncated (max_tokens reached). "
                     "Try a shorter/simpler description."
                 )
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Gemini API error: {e}")
+
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
+        import httpx
+        url = self.BASE_URL.format(model=self.model_name)
+        contents = [
+            {
+                "role": "model" if m["role"] == "assistant" else "user",
+                "parts": [{"text": m["content"]}],
+            }
+            for m in messages
+        ]
+        payload: Dict[str, Any] = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": 4096,
+            },
+        }
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    url,
+                    params={"key": self.api_key},
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                )
+            if resp.status_code != 200:
+                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except ValueError:
             raise

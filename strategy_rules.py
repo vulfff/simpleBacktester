@@ -105,19 +105,26 @@ class ConstantOperand(Operand):
 # ── Price field ───────────────────────────────────────────────────────────────
 
 class PriceField(str, Enum):
-    BID    = "bid"
-    ASK    = "ask"
-    MID    = "mid"
+    CLOSE  = "close"
     HIGH   = "high"
     LOW    = "low"
     VOLUME = "volume"
+
+
+def _parse_price_field(val: str) -> PriceField:
+    """Parse a PriceField value with backward-compat fallback.
+    Old saved strategies may reference 'bid', 'ask', or 'mid' — all map to CLOSE."""
+    try:
+        return PriceField(val)
+    except ValueError:
+        return PriceField.CLOSE
 
 
 @_reg
 @dataclass
 class PriceOperand(Operand):
     _type_tag = "price"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
 
     def value(self, series: "PriceSeries") -> float:
         return series.current(self.field)
@@ -127,7 +134,7 @@ class PriceOperand(Operand):
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "PriceOperand":
-        return cls(field=PriceField(d["field"]))
+        return cls(field=_parse_price_field(d["field"]))
 
 
 # ── Lookback ──────────────────────────────────────────────────────────────────
@@ -136,7 +143,7 @@ class PriceOperand(Operand):
 @dataclass
 class LookbackOperand(Operand):
     _type_tag = "lookback"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
     period: int = 1
 
     @property
@@ -151,7 +158,7 @@ class LookbackOperand(Operand):
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "LookbackOperand":
-        return cls(field=PriceField(d["field"]), period=int(d["period"]))
+        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── SMA ───────────────────────────────────────────────────────────────────────
@@ -160,7 +167,7 @@ class LookbackOperand(Operand):
 @dataclass
 class SMAOperand(Operand):
     _type_tag = "sma"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
     period: int = 20
 
     @property
@@ -178,7 +185,7 @@ class SMAOperand(Operand):
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "SMAOperand":
-        return cls(field=PriceField(d["field"]), period=int(d["period"]))
+        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── EMA ───────────────────────────────────────────────────────────────────────
@@ -187,7 +194,7 @@ class SMAOperand(Operand):
 @dataclass
 class EMAOperand(Operand):
     _type_tag = "ema"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
     period: int = 20
 
     @property
@@ -202,7 +209,7 @@ class EMAOperand(Operand):
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "EMAOperand":
-        return cls(field=PriceField(d["field"]), period=int(d["period"]))
+        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── RSI ───────────────────────────────────────────────────────────────────────
@@ -211,7 +218,7 @@ class EMAOperand(Operand):
 @dataclass
 class RSIOperand(Operand):
     _type_tag = "rsi"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
     period: int = 14
 
     @property
@@ -226,7 +233,7 @@ class RSIOperand(Operand):
 
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "RSIOperand":
-        return cls(field=PriceField(d["field"]), period=int(d["period"]))
+        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── Bollinger ─────────────────────────────────────────────────────────────────
@@ -243,7 +250,7 @@ class BollingerComponent(str, Enum):
 @dataclass
 class BollingerOperand(Operand):
     _type_tag = "bollinger"
-    field: PriceField = PriceField.MID
+    field: PriceField = PriceField.CLOSE
     period: int = 20
     std_dev: float = 2.0
     component: BollingerComponent = BollingerComponent.UPPER
@@ -262,7 +269,7 @@ class BollingerOperand(Operand):
     @classmethod
     def _from_dict(cls, d: Dict[str, Any]) -> "BollingerOperand":
         return cls(
-            field=PriceField(d["field"]),
+            field=_parse_price_field(d["field"]),
             period=int(d["period"]),
             std_dev=float(d.get("std_dev", 2.0)),
             component=BollingerComponent(d.get("component", "upper")),
@@ -527,7 +534,8 @@ class ExitCondition:
         if t == "bars_held":
             return bars_in_trade >= int(self.value)
         if t == "time_of_day":
-            return tick.time.hour == int(self.value)
+            minutes = tick.time.hour * 60 + tick.time.minute
+            return minutes == int(self.value)
         if t == "day_of_week":
             # value uses ISO weekday convention: 1=Monday … 5=Friday … 7=Sunday
             return tick.time.isoweekday() == int(self.value)
@@ -740,11 +748,13 @@ class PriceSeries:
     _MAX_BUF = 1000
 
     def __init__(self) -> None:
-        self._bufs:       Dict[str, Deque[float]] = {}
-        self._cache:      Dict[Any, float]         = {}
-        self._macd_hist:  Dict[Tuple, Deque[float]]= {}  # history of MACD line values
-        self._tick_count: int                       = 0
-        self._macd_last_tick: Dict[Tuple, int]      = {}  # last tick index per MACD key
+        self._bufs:           Dict[str, Deque[float]] = {}
+        self._cache:          Dict[Any, float]         = {}
+        self._macd_hist:      Dict[Tuple, Deque[float]]= {}  # history of MACD line values
+        self._tick_count:     int                       = 0
+        self._macd_last_tick: Dict[Tuple, int]          = {}  # last tick index per MACD key
+        self._ema_state:      Dict[Tuple, float]        = {}  # running EMA values (persistent)
+        self._ema_last_tick:  Dict[Tuple, int]          = {}  # tick when EMA was last updated
         self.prev_snapshot: "PriceSeries" = _NullSeries()
         self._current_time = None  # datetime of the most recent tick
 
@@ -752,13 +762,10 @@ class PriceSeries:
         self.prev_snapshot = _SnapShot(self)
         self._current_time = tick.time
 
-        mid = (tick.bid + tick.ask) / 2 if tick.ask else tick.bid
-        bar_high = getattr(tick, "high", 0.0) or tick.bid
-        bar_low  = getattr(tick, "low",  0.0) or tick.bid
+        bar_high = getattr(tick, "high", 0.0) or tick.close
+        bar_low  = getattr(tick, "low",  0.0) or tick.close
         for fname, val in [
-            ("bid",    tick.bid),
-            ("ask",    tick.ask or tick.bid),
-            ("mid",    mid),
+            ("close",  tick.close),
             ("high",   bar_high),
             ("low",    bar_low),
             ("volume", getattr(tick, "volume", 0.0) or 0.0),
@@ -790,15 +797,24 @@ class PriceSeries:
         key = ("ema", field.value, period)
         if key in self._cache:
             return self._cache[key]
-        buf = self.buffer(field, self._MAX_BUF)
-        if len(buf) < period:
+        buf = self._bufs.get(field.value)
+        if not buf or len(buf) < period:
             self._cache[key] = math.nan
             return math.nan
         k = 2.0 / (period + 1)
-        # Seed with SMA of first `period` values
-        ema_val = sum(buf[:period]) / period
-        for price in buf[period:]:
-            ema_val = price * k + ema_val * (1 - k)
+        state_key = ("ema_state", field.value, period)
+        last_tick = self._ema_last_tick.get(state_key, -1)
+        if last_tick == self._tick_count - 1 and state_key in self._ema_state:
+            # Incremental update: one new bar since last compute
+            ema_val = buf[-1] * k + self._ema_state[state_key] * (1 - k)
+        else:
+            # Full recompute from buffer (first call or gap)
+            buf_list = list(buf)
+            ema_val = sum(buf_list[:period]) / period
+            for price in buf_list[period:]:
+                ema_val = price * k + ema_val * (1 - k)
+        self._ema_state[state_key] = ema_val
+        self._ema_last_tick[state_key] = self._tick_count
         self._cache[key] = ema_val
         return ema_val
 
@@ -835,7 +851,7 @@ class PriceSeries:
             self._cache[key] = math.nan
             return math.nan
         mean     = sum(buf) / period
-        variance = sum((x - mean) ** 2 for x in buf) / period
+        variance = sum((x - mean) ** 2 for x in buf) / (period - 1) if period > 1 else 0.0
         sd       = math.sqrt(variance) * std_dev
         upper, lower = mean + sd, mean - sd
         mapping = {
@@ -860,8 +876,8 @@ class PriceSeries:
         if key in self._cache:
             return self._cache[key]
 
-        fast_ema = self.ema(PriceField.MID, fast)
-        slow_ema = self.ema(PriceField.MID, slow)
+        fast_ema = self.ema(PriceField.CLOSE, fast)
+        slow_ema = self.ema(PriceField.CLOSE, slow)
 
         if math.isnan(fast_ema) or math.isnan(slow_ema):
             self._cache[key] = math.nan
@@ -915,15 +931,16 @@ class PriceSeries:
         return min(buf)
 
     def atr(self, period: int) -> float:
-        """Average True Range over `period` bars.
+        """Average True Range using Wilder's smoothing (RMA).
+        Seed = SMA of first `period` true ranges; then RMA: (prev*(period-1)+TR)/period.
         TR = max(high-low, |high-prev_close|, |low-prev_close|)
         """
         key = ("atr", period)
         if key in self._cache:
             return self._cache[key]
-        highs  = list(self._bufs.get("high", deque()))[-(period + 1):]
-        lows   = list(self._bufs.get("low",  deque()))[-(period + 1):]
-        closes = list(self._bufs.get("mid",  deque()))[-(period + 1):]
+        highs  = list(self._bufs.get("high",  deque()))
+        lows   = list(self._bufs.get("low",   deque()))
+        closes = list(self._bufs.get("close", deque()))
         n = min(len(highs), len(lows), len(closes))
         if n < period + 1:
             self._cache[key] = math.nan
@@ -932,15 +949,21 @@ class PriceSeries:
         for i in range(1, n):
             h, l, pc = highs[i], lows[i], closes[i - 1]
             trs.append(max(h - l, abs(h - pc), abs(l - pc)))
-        v = sum(trs) / len(trs) if trs else math.nan
-        self._cache[key] = v
-        return v
+        if len(trs) < period:
+            self._cache[key] = math.nan
+            return math.nan
+        # Seed with SMA of first `period` TRs, then Wilder's smoothing
+        atr_val = sum(trs[:period]) / period
+        for tr in trs[period:]:
+            atr_val = (atr_val * (period - 1) + tr) / period
+        self._cache[key] = atr_val
+        return atr_val
 
     def typical_price(self) -> float:
         """(High + Low + Close) / 3"""
         h = self.current(PriceField.HIGH)
         l = self.current(PriceField.LOW)
-        c = self.current(PriceField.MID)
+        c = self.current(PriceField.CLOSE)
         if math.isnan(h) or math.isnan(l) or math.isnan(c):
             return math.nan
         return (h + l + c) / 3
@@ -969,11 +992,15 @@ class _NullSeries(PriceSeries):
 class _SnapShot(PriceSeries):
     """Lightweight copy of PriceSeries state for crossover detection (prev tick)."""
     def __init__(self, src: PriceSeries) -> None:
-        self._bufs         = {k: deque(v) for k, v in src._bufs.items()}
-        self._cache        = dict(src._cache)
-        self._macd_hist    = {k: deque(v) for k, v in src._macd_hist.items()}
-        self.prev_snapshot = src.prev_snapshot   # chain doesn't need to go deeper
-        self._current_time = src._current_time
+        self._bufs            = {k: deque(v) for k, v in src._bufs.items()}
+        self._cache           = dict(src._cache)
+        self._macd_hist       = {k: deque(v) for k, v in src._macd_hist.items()}
+        self._tick_count      = src._tick_count
+        self._macd_last_tick  = dict(src._macd_last_tick)
+        self._ema_state       = dict(src._ema_state)
+        self._ema_last_tick   = dict(src._ema_last_tick)
+        self.prev_snapshot    = src.prev_snapshot   # chain doesn't need to go deeper
+        self._current_time    = src._current_time
 
     def push(self, *_):
         raise RuntimeError("Cannot push to a snapshot")
@@ -1108,6 +1135,7 @@ OPERAND_SCHEMA = {
                                  {"name": "period",  "type": "integer", "label": "Period",  "min": 1}]},
     "atr":          {"params": [{"name": "period",  "type": "integer", "label": "Period",  "min": 1}]},
     "typical_price": {"params": []},
+    "time_of_day":   {"params": []},
 }
 
 OPERATOR_OPTIONS = [op.value for op in Operator]

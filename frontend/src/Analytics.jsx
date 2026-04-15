@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   LineChart, Line, AreaChart, Area,
   XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Brush,
@@ -7,6 +8,19 @@ import {
 const API = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
 const RUN_COLORS = ['#3ab7f5', '#2fd89a', '#f9c74f', '#e879c0', '#fb923c']
+
+const RUN_PROMPTS = [
+  'Summarize the overall performance of this run.',
+  'What caused the largest drawdown?',
+  'Was the risk-adjusted return (Sharpe / Sortino) acceptable?',
+  'How did this strategy compare to a buy-and-hold baseline?',
+  'Were there any patterns in the winning vs. losing trades?',
+  'Did the strategy have too few trades to be statistically meaningful?',
+  'What execution or commission impact is visible in the results?',
+  'What improvements would you suggest based on this run?',
+]
+
+const ANALYSIS_TEMPERATURE = 0.2
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,10 +43,26 @@ function fmtRunDate(iso) {
 }
 
 function buildDrawdown(curve) {
-  let peak = -Infinity
+  const hasAv = curve.some(pt => pt.asset_value != null)
+  let peak = null
+  let inPosition = false
   return curve.map(pt => {
-    if (pt.equity > peak) peak = pt.equity
-    const drawdown = peak > 0 ? Math.round(((pt.equity - peak) / peak) * 10000) / 100 : 0
+    let drawdown = 0
+    if (hasAv) {
+      const av = pt.asset_value || 0
+      if (av > 0) {
+        if (!inPosition || peak === null) { peak = pt.equity; inPosition = true }
+        else if (pt.equity > peak) peak = pt.equity
+        drawdown = peak > 0 ? Math.round(((pt.equity - peak) / peak) * 10000) / 100 : 0
+      } else {
+        inPosition = false
+      }
+    } else {
+      // Legacy fallback: rolling peak
+      if (peak === null) peak = pt.equity
+      else if (pt.equity > peak) peak = pt.equity
+      drawdown = peak > 0 ? Math.round(((pt.equity - peak) / peak) * 10000) / 100 : 0
+    }
     return { t: pt.t, drawdown }
   })
 }
@@ -88,32 +118,33 @@ function ChartTooltip({ active, payload, label }) {
 // ── Metrics grid ──────────────────────────────────────────────────────────────
 
 function MetricsGrid({ metrics }) {
+  const { t } = useTranslation()
   const [activeTooltip, setActiveTooltip] = useState(null)
   if (!metrics) return null
   const m = metrics
   const cards = [
-    { label: 'Total Return',  value: fmtPct(m.total_return_pct),  pos: m.total_return_pct >= 0,
-      desc: 'Total gain/loss from starting capital. (final − initial) / initial × 100.' },
-    { label: 'CAGR',          value: fmtPct(m.cagr_pct),          pos: m.cagr_pct >= 0,
-      desc: 'Compound Annual Growth Rate — annualised return if the run lasted one full year.' },
-    { label: 'Max Drawdown',  value: fmtPct(m.max_drawdown_pct),  pos: false, red: true,
-      desc: 'Largest peak-to-trough equity drop while a position was held. More negative = worse.' },
-    { label: 'Sharpe Ratio',  value: fmtNum(m.sharpe_ratio),      pos: m.sharpe_ratio >= 0,
-      desc: 'Return per unit of volatility (annualised). >1 is good, >2 is excellent. 0 if no volatility.' },
-    { label: 'Win Rate',      value: fmtPct(m.win_rate_pct),      pos: m.win_rate_pct >= 50,
-      desc: '% of closed round-trip trades that were profitable. High win-rate can still lose if losses are large.' },
-    { label: 'Profit Factor', value: isFinite(m.profit_factor) ? fmtNum(m.profit_factor) : '∞', pos: m.profit_factor >= 1,
-      desc: 'Gross profit ÷ gross loss. >1 means profits outweigh losses. ∞ means no losing trades.' },
-    { label: 'Sortino Ratio', value: fmtNum(m.sortino_ratio),     pos: m.sortino_ratio >= 0,
-      desc: 'Like Sharpe but only penalises downside volatility. >1 is good, >2 is excellent.' },
-    { label: 'Calmar Ratio',  value: fmtNum(m.calmar_ratio),      pos: m.calmar_ratio >= 0,
-      desc: 'CAGR ÷ |max drawdown|. Measures return earned per unit of drawdown risk. Higher is better.' },
-    { label: 'Total Trades',  value: String(m.total_trades ?? '—'), pos: true,
-      desc: 'Total number of fill events (each buy/sell/short/cover counts as one).' },
-    { label: 'Avg Trade',     value: fmtPct(m.avg_trade_pct),     pos: m.avg_trade_pct >= 0,
-      desc: 'Mean P&L per completed round-trip as % of entry price.' },
-    { label: 'Avg Bars Held', value: fmtNum(m.avg_bars_held, 1),  pos: true,
-      desc: 'Mean number of bars a position was held before being closed.' },
+    { label: t('analytics.totalReturn'),  value: fmtPct(m.total_return_pct),  pos: m.total_return_pct >= 0,
+      desc: t('analytics.totalReturnDesc') },
+    { label: t('analytics.cagr'),          value: fmtPct(m.cagr_pct),          pos: m.cagr_pct >= 0,
+      desc: t('analytics.cagrDesc') },
+    { label: t('analytics.maxDrawdown'),  value: fmtPct(m.max_drawdown_pct),  pos: false, red: true,
+      desc: t('analytics.maxDrawdownDesc') },
+    { label: t('analytics.sharpeRatio'),  value: fmtNum(m.sharpe_ratio),      pos: m.sharpe_ratio >= 0,
+      desc: t('analytics.sharpeRatioDesc') },
+    { label: t('analytics.winRate'),      value: fmtPct(m.win_rate_pct),      pos: m.win_rate_pct >= 50,
+      desc: t('analytics.winRateDesc') },
+    { label: t('analytics.profitFactor'), value: isFinite(m.profit_factor) ? fmtNum(m.profit_factor) : '∞', pos: m.profit_factor >= 1,
+      desc: t('analytics.profitFactorDesc') },
+    { label: t('analytics.sortinoRatio'), value: fmtNum(m.sortino_ratio),     pos: m.sortino_ratio >= 0,
+      desc: t('analytics.sortinoRatioDesc') },
+    { label: t('analytics.calmarRatio'),  value: fmtNum(m.calmar_ratio),      pos: m.calmar_ratio >= 0,
+      desc: t('analytics.calmarRatioDesc') },
+    { label: t('analytics.totalTrades'),  value: String(m.total_trades ?? '—'), pos: true,
+      desc: t('analytics.totalTradesDesc') },
+    { label: t('analytics.avgTrade'),     value: fmtPct(m.avg_trade_pct),     pos: m.avg_trade_pct >= 0,
+      desc: t('analytics.avgTradeDesc') },
+    { label: t('analytics.avgBarsHeld'), value: fmtNum(m.avg_bars_held, 1),  pos: true,
+      desc: t('analytics.avgBarsHeldDesc') },
   ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
@@ -159,21 +190,22 @@ function MetricsGrid({ metrics }) {
 // ── Trade log ─────────────────────────────────────────────────────────────────
 
 function TradeLog({ trades }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   if (!trades?.length) return (
-    <p style={{ color: 'var(--text-mute)', fontSize: '0.82rem' }}>No trades recorded.</p>
+    <p style={{ color: 'var(--text-mute)', fontSize: '0.82rem' }}>{t('analytics.noTrades')}</p>
   )
   return (
     <div>
       <button className="btn btn-sm btn-ghost" onClick={() => setOpen(o => !o)} style={{ marginBottom: 8 }}>
-        {open ? '▲' : '▼'} Trade Log ({trades.length} fills)
+        {open ? '▲' : '▼'} {t('analytics.tradeLogBtn', { count: trades.length })}
       </button>
       {open && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-mute)' }}>
-                {['#', 'Action', 'Symbol', 'Qty', 'Price'].map(h => (
+                {[t('analytics.thTime'), 'Time', t('analytics.thAction'), t('analytics.thSymbol'), t('analytics.thQty'), t('analytics.thPrice')].map(h => (
                   <th key={h} style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 700 }}>{h}</th>
                 ))}
               </tr>
@@ -184,6 +216,7 @@ function TradeLog({ trades }) {
                 return (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)', color: isBuy ? 'var(--green)' : 'var(--red)' }}>
                     <td style={{ padding: '4px 10px', color: 'var(--text-mute)' }}>{i + 1}</td>
+                    <td style={{ padding: '4px 10px', color: 'var(--text-mute)', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{t.t ? String(t.t).slice(0, 19) : '—'}</td>
                     <td style={{ padding: '4px 10px', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.72rem' }}>{t.action}</td>
                     <td style={{ padding: '4px 10px', color: 'var(--text-soft)' }}>{t.symbol}</td>
                     <td style={{ padding: '4px 10px' }}>{fmtNum(t.qty)}</td>
@@ -202,16 +235,17 @@ function TradeLog({ trades }) {
 // ── Execution param badges ────────────────────────────────────────────────────
 
 function ExecBadges({ params }) {
+  const { t } = useTranslation()
   if (!params) return null
   const badges = []
   if (params.sizing_mode === 'all_in') {
     const lev = params.leverage && params.leverage !== 1 ? ` ${params.leverage}×` : ''
-    badges.push({ label: `All-In${lev}`, color: '#a78bfa' })
+    badges.push({ label: `${t('analytics.allInBadge')}${lev}`, color: '#a78bfa' })
   }
   if (params.commission_mode === 'pct')
-    badges.push({ label: `${params.commission_value}% commission`, color: '#60a5fa' })
+    badges.push({ label: t('analytics.pctCommission', { value: params.commission_value }), color: '#60a5fa' })
   if (params.commission_mode === 'flat')
-    badges.push({ label: `$${params.commission_value} flat commission`, color: '#60a5fa' })
+    badges.push({ label: t('analytics.flatCommission', { value: params.commission_value }), color: '#60a5fa' })
   if (!badges.length) return null
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
@@ -231,6 +265,7 @@ function RunCard({
   run, isSelected, isCompared, isDeleteSelected, compareColor,
   onSelect, onToggleCompare, onToggleDelete, onDelete,
 }) {
+  const { t } = useTranslation()
   const m   = run.metrics || {}
   const ret = m.total_return_pct ?? 0
 
@@ -258,7 +293,7 @@ function RunCard({
         <button
           className="btn btn-sm btn-ghost btn-icon"
           onClick={e => { e.stopPropagation(); onDelete(run.id) }}
-          title="Delete run"
+          title={t('analytics.deleteRun')}
           style={{ fontSize: '0.9rem', padding: '2px 5px', color: 'var(--text-mute)', flexShrink: 0 }}
         >🗑</button>
       </div>
@@ -282,7 +317,7 @@ function RunCard({
           {fmtPct(ret)}
         </span>
         <span style={{ fontSize: '0.68rem', color: 'var(--text-mute)' }}>
-          {m.total_trades ?? 0} trades
+          {m.total_trades ?? 0} {t('analytics.trades')}
         </span>
       </div>
 
@@ -297,7 +332,7 @@ function RunCard({
             border:      `1.5px solid ${isCompared ? compareColor || 'var(--accent)' : 'var(--border)'}`,
             background:  isCompared ? compareColor || 'var(--accent)' : 'transparent',
           }} />
-          <span style={{ fontSize: '0.67rem', color: 'var(--text-mute)' }}>Compare</span>
+          <span style={{ fontSize: '0.67rem', color: 'var(--text-mute)' }}>{t('analytics.compare')}</span>
         </div>
 
         <div
@@ -309,7 +344,7 @@ function RunCard({
             border:     `1.5px solid ${isDeleteSelected ? 'var(--red)' : 'var(--border)'}`,
             background: isDeleteSelected ? 'rgba(244,114,106,0.25)' : 'transparent',
           }} />
-          <span style={{ fontSize: '0.67rem', color: 'var(--text-mute)' }}>Select</span>
+          <span style={{ fontSize: '0.67rem', color: 'var(--text-mute)' }}>{t('analytics.select')}</span>
         </div>
       </div>
 
@@ -323,19 +358,43 @@ function RunCard({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Analytics() {
+  const { t, i18n } = useTranslation()
   const [runs,        setRuns]        = useState([])
   const [selectedId,  setSelectedId]  = useState(null)
   const [selectedRun, setSelectedRun] = useState(null)
   const [compareIds,  setCompareIds]  = useState([])
   const [compareData, setCompareData] = useState({})
-  const [deleteIds,   setDeleteIds]   = useState([])
-  const [chartTab,    setChartTab]    = useState('equity')
-  const [search,      setSearch]      = useState('')
-  const [loading,     setLoading]     = useState(false)
-  const [loadingRuns, setLoadingRuns] = useState(true)
-  const [error,       setError]       = useState(null)
+  const _compareFetching = useRef(new Set())  // guard against duplicate fetches
+  const [deleteIds,        setDeleteIds]        = useState([])
+  const [chartTab,         setChartTab]         = useState('equity')
+  const [search,           setSearch]           = useState('')
+  const [loading,          setLoading]          = useState(false)
+  const [loadingRuns,      setLoadingRuns]      = useState(true)
+  const [error,            setError]            = useState(null)
+  const [aiModel,          setAiModel]          = useState(null)
+  const [analysisMessages, setAnalysisMessages] = useState([])
+  const [analysisPending,  setAnalysisPending]  = useState(false)
+  const [analysisInput,    setAnalysisInput]    = useState('')
+  const analysisEndRef = useRef(null)
 
   useEffect(() => { fetchRuns() }, [])
+
+  // Fetch active AI model for the analysis tab badge/guard
+  useEffect(() => {
+    fetch(`${API}/db/model-keys`)
+      .then(r => r.json())
+      .then(d => {
+        const active = d.keys?.find(k => k.active)
+        setAiModel(active?.model_name || null)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Reset analysis chat when a different run is selected
+  useEffect(() => {
+    setAnalysisMessages([])
+    setAnalysisInput('')
+  }, [selectedId])
 
   async function fetchRuns() {
     setLoadingRuns(true)
@@ -344,7 +403,7 @@ export default function Analytics() {
       const j = await r.json()
       setRuns(j.runs || [])
     } catch (e) {
-      setError('Failed to load runs: ' + e.message)
+      setError(t('analytics.failedLoadRuns', { message: e.message }))
     } finally {
       setLoadingRuns(false)
     }
@@ -368,7 +427,7 @@ export default function Analytics() {
       const r = await fetch(`${API}/db/runs/${id}`)
       setSelectedRun(await r.json())
     } catch (e) {
-      setError('Failed to load run: ' + e.message)
+      setError(t('analytics.failedLoadRun', { message: e.message }))
     } finally {
       setLoading(false)
     }
@@ -384,14 +443,18 @@ export default function Analytics() {
     }
     if (compareIds.length >= 5) return
     setCompareIds(p => [...p, id])
-    if (!compareData[id]) {
-      try {
-        const r = await fetch(`${API}/db/runs/${id}`)
-        const j = await r.json()
-        setCompareData(p => ({ ...p, [id]: j }))
-      } catch { /* silent */ }
-    }
-  }, [compareIds, compareData])
+    // Guard: skip fetch if already in-flight or already loaded (stale closure fix)
+    setCompareData(prev => {
+      if (prev[id] || _compareFetching.current.has(id)) return prev
+      _compareFetching.current.add(id)
+      fetch(`${API}/db/runs/${id}`)
+        .then(r => r.json())
+        .then(j => setCompareData(p => ({ ...p, [id]: j })))
+        .catch(() => {})
+        .finally(() => _compareFetching.current.delete(id))
+      return prev
+    })
+  }, [compareIds])
 
   // ── multi-select for deletion ─────────────────────────────────────────────
 
@@ -402,15 +465,16 @@ export default function Analytics() {
   // ── single delete ─────────────────────────────────────────────────────────
 
   const deleteRun = useCallback(async (id) => {
-    if (!confirm('Delete this backtest run?')) return
+    if (!confirm(t('analytics.confirmDelete'))) return
     try {
-      await fetch(`${API}/db/runs/${id}`, { method: 'DELETE' })
+      const r = await fetch(`${API}/db/runs/${id}`, { method: 'DELETE' })
+      if (!r.ok) throw new Error((await r.json()).detail || 'Delete failed')
       setRuns(p => p.filter(r => r.id !== id))
       if (selectedId === id) { setSelectedId(null); setSelectedRun(null) }
       setCompareIds(p => p.filter(x => x !== id))
       setCompareData(p => { const c = { ...p }; delete c[id]; return c })
       setDeleteIds(p => p.filter(x => x !== id))
-    } catch { alert('Failed to delete run.') }
+    } catch (e) { alert(e.message || 'Failed to delete run.') }
   }, [selectedId])
 
   // ── batch delete ──────────────────────────────────────────────────────────
@@ -418,13 +482,14 @@ export default function Analytics() {
   const deleteBatch = useCallback(async () => {
     if (!deleteIds.length) return
     const n = deleteIds.length
-    if (!confirm(`Delete ${n} selected run${n > 1 ? 's' : ''}? This cannot be undone.`)) return
+    if (!confirm(t('analytics.confirmDeleteBatch', { count: n }))) return
     try {
-      await fetch(`${API}/db/runs/batch-delete`, {
+      const r = await fetch(`${API}/db/runs/batch-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: deleteIds }),
       })
+      if (!r.ok) throw new Error((await r.json()).detail || 'Batch delete failed')
       setRuns(p => p.filter(r => !deleteIds.includes(r.id)))
       if (deleteIds.includes(selectedId)) { setSelectedId(null); setSelectedRun(null) }
       setCompareIds(p => p.filter(x => !deleteIds.includes(x)))
@@ -437,15 +502,52 @@ export default function Analytics() {
 
   const deleteAll = useCallback(async () => {
     if (!runs.length) return
-    if (!confirm(`Delete all ${runs.length} saved run${runs.length > 1 ? 's' : ''}? This cannot be undone.`)) return
+    if (!confirm(t('analytics.confirmDeleteAll', { count: runs.length }))) return
     try {
-      await fetch(`${API}/db/runs`, { method: 'DELETE' })
+      const r = await fetch(`${API}/db/runs`, { method: 'DELETE' })
+      if (!r.ok) throw new Error((await r.json()).detail || 'Delete all failed')
       setRuns([])
       setSelectedId(null); setSelectedRun(null)
       setCompareIds([]); setCompareData({})
       setDeleteIds([])
     } catch { alert('Failed to delete all runs.') }
   }, [runs.length])
+
+  // ── AI run analysis ───────────────────────────────────────────────────────
+
+  async function sendAnalysis(text) {
+    if (!text.trim() || analysisPending || !selectedRun) return
+    const userMsg = { role: 'user', content: text.trim() }
+    const next = [...analysisMessages, userMsg]
+    setAnalysisMessages(next)
+    setAnalysisInput('')
+    setAnalysisPending(true)
+    try {
+      const r = await fetch(`${API}/ai/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject_type: 'run',
+          subject_id: selectedRun.id,
+          messages: next,
+          temperature: ANALYSIS_TEMPERATURE,
+          language: i18n.language,
+        }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.detail || 'Analysis failed')
+      setAnalysisMessages(prev => [...prev, { role: 'assistant', content: j.reply }])
+    } catch (e) {
+      setAnalysisMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }])
+    } finally {
+      setAnalysisPending(false)
+    }
+  }
+
+  // Auto-scroll chat to bottom on new messages
+  useLayoutEffect(() => {
+    if (chartTab === 'ai') analysisEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [analysisMessages, chartTab])
 
   // ── chart data ────────────────────────────────────────────────────────────
 
@@ -565,30 +667,30 @@ export default function Analytics() {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-mute)' }}>
-            Saved Runs
+            {t('analytics.savedRuns')}
             {runs.length > 0 && (
               <span style={{ color: 'var(--text-soft)', marginLeft: 5, fontWeight: 500 }}>({runs.length})</span>
             )}
           </span>
-          <button className="btn btn-sm btn-ghost btn-icon" onClick={fetchRuns} title="Refresh list">↻</button>
+          <button className="btn btn-sm btn-ghost btn-icon" onClick={fetchRuns} title={t('analytics.refreshList')}>↻</button>
         </div>
 
         {/* Search */}
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name or ticker…"
+          placeholder={t('analytics.searchPlaceholder')}
           style={{ marginBottom: 10, fontSize: '0.8rem', padding: '6px 10px' }}
         />
 
         {/* Run list */}
         <div style={{ flex: 1, overflowY: 'auto', marginRight: -4, paddingRight: 4 }}>
           {loadingRuns && (
-            <p style={{ color: 'var(--text-mute)', fontSize: '0.8rem' }}>Loading…</p>
+            <p style={{ color: 'var(--text-mute)', fontSize: '0.8rem' }}>{t('analytics.loadingRuns')}</p>
           )}
           {!loadingRuns && !filteredRuns.length && (
             <p style={{ color: 'var(--text-mute)', fontSize: '0.8rem', lineHeight: 1.5 }}>
-              {search.trim() ? 'No matching runs.' : 'No runs yet. Run a backtest to see results here.'}
+              {search.trim() ? t('analytics.noMatchingRuns') : t('analytics.noRunsYet')}
             </p>
           )}
           {filteredRuns.map(run => {
@@ -614,7 +716,7 @@ export default function Analytics() {
         <div style={{ paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {deleteIds.length > 0 && (
             <button className="btn btn-danger btn-sm btn-pill" onClick={deleteBatch}>
-              🗑 Delete selected ({deleteIds.length})
+              {t('analytics.deleteSelected', { count: deleteIds.length })}
             </button>
           )}
           {runs.length > 0 && (
@@ -631,7 +733,7 @@ export default function Analytics() {
                 transition: 'all 0.15s',
               }}
             >
-              Delete all runs
+              {t('analytics.deleteAllRuns')}
             </button>
           )}
         </div>
@@ -649,10 +751,10 @@ export default function Analytics() {
           }}>
             <div style={{ fontSize: '3rem' }}>📈</div>
             <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-soft)' }}>
-              Select a run to view analytics
+              {t('analytics.selectRunTitle')}
             </div>
             <div style={{ fontSize: '0.85rem' }}>
-              Click any saved run in the sidebar to see its equity curve and performance metrics.
+              {t('analytics.selectRunDesc')}
             </div>
           </div>
         )}
@@ -660,7 +762,7 @@ export default function Analytics() {
         {/* Loading spinner */}
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 40, color: 'var(--text-mute)' }}>
-            <span className="spinner" /> Loading run data…
+            <span className="spinner" /> {t('analytics.loadingRunData')}
           </div>
         )}
 
@@ -683,13 +785,13 @@ export default function Analytics() {
                       </span>
                     )}
                     {selectedRun.timeframe && (
-                      <span>Timeframe: <strong style={{ color: 'var(--text-soft)' }}>{selectedRun.timeframe}</strong></span>
+                      <span>{t('analytics.timeframe')}: <strong style={{ color: 'var(--text-soft)' }}>{selectedRun.timeframe}</strong></span>
                     )}
                     {selectedRun.start_date && (
                       <span>{fmtDate(selectedRun.start_date)} → {fmtDate(selectedRun.end_date)}</span>
                     )}
                     <span>
-                      Capital: <strong style={{ color: 'var(--text-soft)' }}>${fmtNum(selectedRun.starting_cash, 0)}</strong>
+                      {t('analytics.capital')}: <strong style={{ color: 'var(--text-soft)' }}>${fmtNum(selectedRun.starting_cash, 0)}</strong>
                     </span>
                     <span style={{ color: 'var(--text-mute)' }}>
                       {fmtRunDate(selectedRun.run_at)}
@@ -708,7 +810,7 @@ export default function Analytics() {
                       background: 'rgba(58,183,245,0.1)', color: 'var(--accent)',
                       borderRadius: 6, padding: '3px 8px',
                     }}>
-                      {selectedRun.warmup_bars || params.warmup_bars} bar warmup
+                      {t('analytics.barWarmup', { count: selectedRun.warmup_bars || params.warmup_bars })}
                     </span>
                   )}
                 </div>
@@ -725,12 +827,12 @@ export default function Analytics() {
               {/* Tab strip + compare legend */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                 <div className="tab-strip" style={{ width: 'auto' }}>
-                  {[{ id: 'equity', label: 'Equity Curve' }, { id: 'drawdown', label: 'Drawdown' }, { id: 'price', label: 'Asset Price' }].map(t => (
-                    <button key={t.id}
-                      className={`tab-btn${chartTab === t.id ? ' active' : ''}`}
-                      onClick={() => setChartTab(t.id)}
-                      style={{ flex: 'none', padding: '5px 18px' }}>
-                      {t.label}
+                  {[{ id: 'equity', label: t('analytics.equityCurve') }, { id: 'drawdown', label: t('analytics.drawdown') }, { id: 'price', label: t('analytics.assetPrice') }, { id: 'ai', label: t('analytics.aiAnalysis') }].map(tab => (
+                    <button key={tab.id}
+                      className={`tab-btn${chartTab === tab.id ? ' active' : ''}`}
+                      onClick={() => setChartTab(tab.id)}
+                      style={{ flex: 'none', padding: '5px 18px', ...(tab.id === 'ai' && chartTab !== 'ai' ? { color: '#f59e0b' } : {}) }}>
+                      {tab.label}
                     </button>
                   ))}
                 </div>
@@ -755,7 +857,7 @@ export default function Analytics() {
                       tick={{ fontSize: 10, fill: 'var(--text-mute)' }}
                       tickFormatter={v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}
                       width={60}
-                      label={{ value: 'Return (%)', angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
+                      label={{ value: t('analytics.returnPct'), angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
                     />
                     <Tooltip content={<ChartTooltip />} />
                     {chartRunOrder.map(r => (
@@ -795,7 +897,7 @@ export default function Analytics() {
                       tick={{ fontSize: 10, fill: 'var(--text-mute)' }}
                       tickFormatter={v => `${v.toFixed(1)}%`}
                       width={60}
-                      label={{ value: 'Drawdown (%)', angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
+                      label={{ value: t('analytics.drawdownPct'), angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
                     />
                     <Tooltip content={<ChartTooltip />} />
                     {chartRunOrder.map(r => (
@@ -820,7 +922,7 @@ export default function Analytics() {
                       tickFormatter={v => `$${fmtNum(v)}`}
                       width={72}
                       domain={['auto', 'auto']}
-                      label={{ value: 'Price ($)', angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
+                      label={{ value: t('analytics.priceDollar'), angle: -90, position: 'insideLeft', offset: 14, fontSize: 10, fill: 'var(--text-mute)' }}
                     />
                     <Tooltip content={<ChartTooltip />} />
                     <Line type="monotone" dataKey="price" name={selectedRun?.ticker || 'Price'}
@@ -845,9 +947,93 @@ export default function Analytics() {
                 </ResponsiveContainer>
               )}
 
-              {!hasChart && (
+              {/* AI Analysis chat */}
+              {chartTab === 'ai' && (
+                <div style={{ display: 'flex', flexDirection: 'column', height: 480 }}>
+                  {!aiModel ? (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: 'var(--text-mute)' }}>
+                      <div style={{ fontSize: '1.5rem' }}>🤖</div>
+                      <div style={{ fontSize: '0.85rem' }}>{t('analytics.noAiModel')}</div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Messages area */}
+                      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 4 }}>
+                        {analysisMessages.length === 0 && (
+                          <div style={{ padding: '8px 0' }}>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-mute)', marginBottom: 10 }}>
+                              Ask the AI analyst about this run. Using <strong style={{ color: 'var(--text-soft)' }}>{aiModel}</strong> · temp {ANALYSIS_TEMPERATURE}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {RUN_PROMPTS.map(p => (
+                                <button key={p}
+                                  className="btn btn-sm"
+                                  style={{ fontSize: '0.75rem', background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 20, padding: '4px 12px', cursor: 'pointer', textAlign: 'left' }}
+                                  onClick={() => sendAnalysis(p)}
+                                >
+                                  {p}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {analysisMessages.map((msg, i) => (
+                          <div key={i} style={{
+                            display: 'flex',
+                            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                          }}>
+                            <div style={{
+                              maxWidth: '85%',
+                              padding: '8px 13px',
+                              borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                              background: msg.role === 'user' ? 'var(--accent)' : 'var(--panel2)',
+                              color: msg.role === 'user' ? '#fff' : 'var(--text)',
+                              fontSize: '0.82rem',
+                              lineHeight: 1.55,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}>
+                              {msg.content}
+                            </div>
+                          </div>
+                        ))}
+
+                        {analysisPending && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-mute)', fontSize: '0.8rem' }}>
+                            <span className="spinner" style={{ width: 14, height: 14 }} /> {t('analytics.analyzing')}
+                          </div>
+                        )}
+                        <div ref={analysisEndRef} />
+                      </div>
+
+                      {/* Input row */}
+                      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                        <input
+                          value={analysisInput}
+                          onChange={e => setAnalysisInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAnalysis(analysisInput) } }}
+                          placeholder={t('analytics.askAboutRun')}
+                          disabled={analysisPending}
+                          style={{ flex: 1, fontSize: '0.85rem', padding: '7px 12px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)' }}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => sendAnalysis(analysisInput)}
+                          disabled={analysisPending || !analysisInput.trim()}
+                          style={{ flexShrink: 0 }}
+                        >
+                          {t('common.send')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!hasChart && chartTab !== 'ai' && (
                 <div style={{ textAlign: 'center', color: 'var(--text-mute)', padding: 40 }}>
-                  No equity curve data for this run.
+                  {t('analytics.noEquityCurve')}
                 </div>
               )}
             </div>
@@ -855,7 +1041,7 @@ export default function Analytics() {
             {/* ── Trade log ─────────────────────────────────────────────── */}
             <div className="card">
               <div style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-mute)', marginBottom: 10 }}>
-                Trade Log
+                {t('analytics.tradeLog')}
               </div>
               <TradeLog trades={selectedRun.trade_log} />
             </div>

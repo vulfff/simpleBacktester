@@ -25,25 +25,25 @@ def cond(left, op, right, combiner="and"):
 def exit_cond(exit_type, value, combiner="and"):
     return {"kind": "exit_condition", "exitType": exit_type, "value": value, "combiner": combiner}
 
-def price(field="mid"):
+def price(field="close"):
     return {"type": "price", "field": field}
 
 def const(value):
     return {"type": "constant", "value": value}
 
-def sma(period, field="mid"):
+def sma(period, field="close"):
     return {"type": "sma", "field": field, "period": period}
 
-def ema(period, field="mid"):
+def ema(period, field="close"):
     return {"type": "ema", "field": field, "period": period}
 
-def rsi(period=14, field="mid"):
+def rsi(period=14, field="close"):
     return {"type": "rsi", "field": field, "period": period}
 
 def macd_comp(component, fast=12, slow=26, signal=9):
     return {"type": "macd", "fast": fast, "slow": slow, "signal": signal, "component": component}
 
-def boll(component, period=20, std_dev=2.0, field="mid"):
+def boll(component, period=20, std_dev=2.0, field="close"):
     return {"type": "bollinger", "field": field, "period": period,
             "std_dev": std_dev, "component": component}
 
@@ -70,6 +70,24 @@ def n_ifelse(cond_left, cond_op, cond_right, then, else_):
 
 def n_clamp(value, lo, hi):
     return {"node": "clamp", "value": value, "lo": lo, "hi": hi}
+
+def n_unop(op, operand):
+    return {"node": "unop", "op": op, "operand": operand}
+
+def highest_high(period, field="high"):
+    return {"type": "highest_high", "field": field, "period": period}
+
+def lowest_low(period, field="low"):
+    return {"type": "lowest_low", "field": field, "period": period}
+
+def atr(period=14):
+    return {"type": "atr", "period": period}
+
+def typical_price():
+    return {"type": "typical_price"}
+
+def lookback(period, field="close"):
+    return {"type": "lookback", "field": field, "period": period}
 
 
 # ── Pre-built strategies ──────────────────────────────────────────────────────
@@ -255,7 +273,7 @@ INDICATORS = [
         "expr": n_binop(
             "-",
             n_op(price()),
-            n_op({"type": "lookback", "field": "mid", "period": 5}),
+            n_op({"type": "lookback", "field": "close", "period": 5}),
         ),
     },
 
@@ -288,6 +306,160 @@ INDICATORS = [
             n_binop("*", n_op(boll("pct_b", 20, 2.0)), n_const(100)),
             n_const(-20),
             n_const(120),
+        ),
+    },
+
+    # ── 6. Williams %R (14) ─────────────────────────────────────────────────
+    # %R = (HighestHigh - Close) / (HighestHigh - LowestLow) * -100
+    {
+        "name": "Williams %R",
+        "description": (
+            "Williams %R oscillator (14 bars). Ranges from -100 (oversold) to 0 (overbought). "
+            "Readings below -80 suggest oversold conditions; above -20 suggest overbought."
+        ),
+        "color": "#818cf8",
+        "expr": n_binop(
+            "*",
+            n_binop(
+                "/",
+                n_binop("-", n_op(highest_high(14)), n_op(price())),
+                n_binop("-", n_op(highest_high(14)), n_op(lowest_low(14))),
+            ),
+            n_const(-100),
+        ),
+    },
+
+    # ── 7. Stochastic %K (14) ──────────────────────────────────────────────
+    # %K = (Close - LowestLow) / (HighestHigh - LowestLow) * 100
+    {
+        "name": "Stochastic %K",
+        "description": (
+            "Stochastic oscillator %K (14 bars). Ranges 0–100. "
+            "Below 20 = oversold; above 80 = overbought. "
+            "Shows where close sits relative to the recent high-low range."
+        ),
+        "color": "#c084fc",
+        "expr": n_clamp(
+            n_binop(
+                "*",
+                n_binop(
+                    "/",
+                    n_binop("-", n_op(price()), n_op(lowest_low(14))),
+                    n_binop("-", n_op(highest_high(14)), n_op(lowest_low(14))),
+                ),
+                n_const(100),
+            ),
+            n_const(0),
+            n_const(100),
+        ),
+    },
+
+    # ── 8. Rate of Change (ROC 12) ─────────────────────────────────────────
+    # ROC = (Close - Close[12]) / Close[12] * 100
+    {
+        "name": "Rate of Change (12)",
+        "description": (
+            "12-bar Rate of Change (%). Measures percentage change from 12 bars ago. "
+            "Positive = price rising; negative = price falling. "
+            "A classic momentum indicator for trend strength."
+        ),
+        "color": "#fbbf24",
+        "expr": n_binop(
+            "*",
+            n_binop(
+                "/",
+                n_binop("-", n_op(price()), n_op(lookback(12))),
+                n_op(lookback(12)),
+            ),
+            n_const(100),
+        ),
+    },
+
+    # ── 9. Keltner Channel Width ───────────────────────────────────────────
+    # Width = 2 * ATR(10) / EMA(20) * 100
+    {
+        "name": "Keltner Channel Width",
+        "description": (
+            "Width of a Keltner Channel (2×ATR(10) around EMA(20)) as a percentage of price. "
+            "Higher values indicate wider channels (more volatility). "
+            "Useful for detecting volatility squeezes when width contracts."
+        ),
+        "color": "#2dd4bf",
+        "expr": n_binop(
+            "*",
+            n_binop(
+                "/",
+                n_binop("*", n_const(2), n_op(atr(10))),
+                n_op(ema(20)),
+            ),
+            n_const(100),
+        ),
+    },
+
+    # ── 10. Donchian Midline (20) ──────────────────────────────────────────
+    # Midline = (HighestHigh(20) + LowestLow(20)) / 2
+    {
+        "name": "Donchian Midline (20)",
+        "description": (
+            "Midpoint of the 20-bar Donchian Channel: average of the highest high and "
+            "lowest low over 20 bars. Acts as a dynamic support/resistance level. "
+            "When price is above midline, trend is up; below, trend is down."
+        ),
+        "color": "#38bdf8",
+        "expr": n_binop(
+            "/",
+            n_binop("+", n_op(highest_high(20)), n_op(lowest_low(20))),
+            n_const(2),
+        ),
+    },
+
+    # ── 11. ATR (14) ───────────────────────────────────────────────────────
+    {
+        "name": "ATR (14)",
+        "description": (
+            "Average True Range over 14 bars. Measures market volatility in price units. "
+            "Higher ATR = more volatile. Useful for setting stop-loss distances "
+            "and position sizing relative to volatility."
+        ),
+        "color": "#f97316",
+        "expr": n_op(atr(14)),
+    },
+
+    # ── 12. MACD Histogram ─────────────────────────────────────────────────
+    # Histogram = MACD line - Signal line
+    {
+        "name": "MACD Histogram",
+        "description": (
+            "Difference between MACD line and its signal line (12/26/9). "
+            "Positive = bullish momentum increasing; negative = bearish. "
+            "When histogram crosses zero, it confirms MACD crossovers."
+        ),
+        "color": "#e879c0",
+        "expr": n_binop(
+            "-",
+            n_op(macd_comp("macd")),
+            n_op(macd_comp("signal")),
+        ),
+    },
+
+    # ── 13. EMA Ribbon Distance ────────────────────────────────────────────
+    # (EMA(8) - EMA(21)) / EMA(21) * 100
+    {
+        "name": "EMA Ribbon Distance",
+        "description": (
+            "Percentage gap between fast EMA(8) and slow EMA(21). "
+            "Positive = price in uptrend with separation; negative = downtrend. "
+            "Narrowing toward zero signals potential trend reversal or consolidation."
+        ),
+        "color": "#4ade80",
+        "expr": n_binop(
+            "*",
+            n_binop(
+                "/",
+                n_binop("-", n_op(ema(8)), n_op(ema(21))),
+                n_op(ema(21)),
+            ),
+            n_const(100),
         ),
     },
 

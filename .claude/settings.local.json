@@ -5,5 +5,9 @@
       "Bash(npx --yes acorn --ecma2020 --module src/StrategyBuilder.jsx)",
       "Bash(npx tsc --noEmit --jsx react-jsx --target es2020 src/StrategyBuilder.jsx)"
     ]
+  },
+  "enabledPlugins": {
+    "claude-mem@thedotmack": true,
+    "gitlab@claude-plugins-official": true
   }
 }
