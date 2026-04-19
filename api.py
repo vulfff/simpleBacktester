@@ -196,9 +196,9 @@ from routes_ai import router as ai_router
 from routes_data import router as data_router
 from routes_db import router as db_router
 
-app.include_router(ai_router)
-app.include_router(data_router)
-app.include_router(db_router)
+app.include_router(ai_router, prefix="/api")
+app.include_router(data_router, prefix="/api")
+app.include_router(db_router, prefix="/api")
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -221,19 +221,19 @@ class BacktestResult(BaseModel):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-@app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+@app.get("/api/health")
+def health() -> Dict[str, Any]:
+    return {"ok": True, "status": "ok"}
 
 
-@app.get("/strategies")
+@app.get("/api/strategies")
 def strategies_list() -> Dict[str, Any]:
     return {"strategies": list_strategies()}
 
 
 # ── Backtest (upload or pre-fetched JSON data) ────────────────────────────────
 
-@app.post("/backtest/upload", response_model=BacktestResult)
+@app.post("/api/backtest/upload", response_model=BacktestResult)
 async def backtest_upload(
     file: Optional[UploadFile] = File(default=None),
     data: Optional[str]        = Form(default=None),
