@@ -161,6 +161,18 @@ def _run_tray(port: int, data_dir: Path, server, thread, lock: Path) -> None:
     icon.run()
 
 
+def _show_fatal_dialog(title: str, message: str) -> None:
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(title, message)
+        root.destroy()
+    except Exception:
+        logging.getLogger("launcher").error("[FATAL] %s — %s", title, message)
+
+
 def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="backtester")
     p.add_argument("--portable", action="store_true", help="store data next to the executable")
@@ -171,9 +183,7 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main(argv: Optional[list] = None) -> int:
-    args = parse_args(argv)
-
+def _main_impl(args: argparse.Namespace) -> int:
     data_dir = paths.resolve_user_data_dir(portable_flag=args.portable)
     os.environ["BACKTESTER_DATA_DIR"] = str(data_dir)
     paths.ensure_data_dir()
@@ -199,7 +209,10 @@ def main(argv: Optional[list] = None) -> int:
     thread, server = _start_uvicorn(port)
 
     if not _wait_for_health(port, timeout_s=10.0):
+        log_path = paths.logs_dir() / "backtester.log"
+        msg = f"Backtester could not start.\n\nLog file:\n{log_path}"
         log.error("server failed readiness probe")
+        _show_fatal_dialog("Backtester — startup failed", msg)
         server.should_exit = True
         thread.join(timeout=5)
         try:
@@ -236,6 +249,19 @@ def main(argv: Optional[list] = None) -> int:
         except FileNotFoundError:
             pass
     return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    args = parse_args(argv)
+    try:
+        return _main_impl(args)
+    except Exception as exc:
+        logging.getLogger("launcher").exception("unhandled error in launcher")
+        _show_fatal_dialog(
+            "Backtester — internal error",
+            f"{exc}\n\nLog: {paths.logs_dir() / 'backtester.log'}",
+        )
+        return 2
 
 
 if __name__ == "__main__":
