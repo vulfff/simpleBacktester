@@ -12,6 +12,7 @@ import logging
 import logging.handlers
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -75,6 +76,67 @@ def _write_lockfile(data_dir: Path, port: int) -> Path:
     return lock
 
 
+def _open_data_dir(data_dir: Path) -> None:
+    if sys.platform.startswith("win"):
+        os.startfile(str(data_dir))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(data_dir)])
+    else:
+        subprocess.Popen(["xdg-open", str(data_dir)])
+
+
+def _icon_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = Path(sys._MEIPASS) / "assets"
+    else:
+        base = Path(__file__).resolve().parent / "assets"
+    return base / "icon.png"
+
+
+def _run_tray(port: int, data_dir: Path, server, thread, lock: Path) -> None:
+    import pystray
+    from PIL import Image
+
+    image = Image.open(_icon_path())
+
+    def _quit(icon, _item):
+        server.should_exit = True
+        thread.join(timeout=5)
+        try:
+            lock.unlink()
+        except FileNotFoundError:
+            pass
+        icon.stop()
+
+    def _open(_icon, _item):
+        webbrowser.open(f"http://127.0.0.1:{port}/")
+
+    def _copy_url(_icon, _item):
+        url = f"http://127.0.0.1:{port}"
+        try:
+            import pyperclip
+            pyperclip.copy(url)
+        except Exception:
+            logging.getLogger("launcher").info("URL: %s", url)
+
+    def _open_dir(_icon, _item):
+        _open_data_dir(data_dir)
+
+    def _about(_icon, _item):
+        logging.getLogger("launcher").info("Backtester — data dir: %s", data_dir)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Open Backtester", _open, default=True),
+        pystray.MenuItem("Copy URL", _copy_url),
+        pystray.MenuItem("Open data folder", _open_dir),
+        pystray.MenuItem("About", _about),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Quit", _quit),
+    )
+    icon = pystray.Icon("backtester", image, "Backtester", menu)
+    icon.run()
+
+
 def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="backtester")
     p.add_argument("--portable", action="store_true", help="store data next to the executable")
@@ -132,12 +194,8 @@ def main(argv: Optional[list] = None) -> int:
                 pass
         return 0
 
-    # Tray loop is added in Task 4.3; for now just block like no-tray.
     try:
-        while thread.is_alive():
-            time.sleep(0.2)
-    except KeyboardInterrupt:
-        pass
+        _run_tray(port, data_dir, server, thread, lock)
     finally:
         server.should_exit = True
         thread.join(timeout=5)
