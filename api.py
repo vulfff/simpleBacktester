@@ -435,3 +435,11 @@ def _run_backtest(
         run_id=run_id, warmup_bars=warmup, equity_curve=equity_curve,
         metrics=mets, trade_log=trade_log_dicts, signal_log=signal_log_dicts,
     )
+
+
+from fastapi.staticfiles import StaticFiles
+import paths
+
+_dist = paths.frontend_dist_dir()
+if _dist.exists():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")
