@@ -161,6 +161,36 @@ def _run_tray(port: int, data_dir: Path, server, thread, lock: Path) -> None:
     icon.run()
 
 
+def _check_db_health(db_file: Path) -> bool:
+    if not db_file.exists():
+        return True
+    import sqlite3
+    try:
+        c = sqlite3.connect(str(db_file))
+        c.execute("PRAGMA integrity_check").fetchone()
+        c.close()
+        return True
+    except sqlite3.DatabaseError:
+        return False
+
+
+def _offer_db_reseed(db_file: Path) -> bool:
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk(); root.withdraw()
+        ok = messagebox.askyesno(
+            "Backtester — data file corrupt",
+            f"Your data file appears corrupt:\n{db_file}\n\n"
+            "Rename it to *.corrupt.<ts> and start with a fresh DB?\n"
+            "(Your old file is preserved, not deleted.)",
+        )
+        root.destroy()
+        return ok
+    except Exception:
+        return False
+
+
 def _show_fatal_dialog(title: str, message: str) -> None:
     try:
         import tkinter as tk
@@ -187,6 +217,23 @@ def _main_impl(args: argparse.Namespace) -> int:
     data_dir = paths.resolve_user_data_dir(portable_flag=args.portable)
     os.environ["BACKTESTER_DATA_DIR"] = str(data_dir)
     paths.ensure_data_dir()
+
+    dist = paths.frontend_dist_dir()
+    if not dist.exists() or not (dist / "index.html").exists():
+        _show_fatal_dialog(
+            "Backtester — internal error (packaging)",
+            f"Frontend bundle missing at:\n{dist}\n\nPlease file an issue.",
+        )
+        return 3
+
+    db_file = paths.db_path()
+    if not _check_db_health(db_file):
+        if _offer_db_reseed(db_file):
+            db_file.rename(db_file.with_suffix(f".db.corrupt.{int(time.time())}"))
+            import seed_prebuilts
+            seed_prebuilts.seed()
+        else:
+            return 4
 
     existing_port = _check_existing_instance(data_dir)
     if existing_port is not None:
