@@ -76,6 +76,30 @@ def _write_lockfile(data_dir: Path, port: int) -> Path:
     return lock
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    except Exception:
+        return False
+    return True
+
+
+def _check_existing_instance(data_dir: Path) -> Optional[int]:
+    """Return the port of an existing running instance, or None."""
+    lock = data_dir / "backtester.lock"
+    if not lock.exists():
+        return None
+    try:
+        info = json.loads(lock.read_text())
+        if _pid_alive(int(info["pid"])):
+            return int(info["port"])
+    except Exception:
+        pass
+    return None
+
+
 def _open_data_dir(data_dir: Path) -> None:
     if sys.platform.startswith("win"):
         os.startfile(str(data_dir))  # type: ignore[attr-defined]
@@ -153,6 +177,14 @@ def main(argv: Optional[list] = None) -> int:
     data_dir = paths.resolve_user_data_dir(portable_flag=args.portable)
     os.environ["BACKTESTER_DATA_DIR"] = str(data_dir)
     paths.ensure_data_dir()
+
+    existing_port = _check_existing_instance(data_dir)
+    if existing_port is not None:
+        if not args.no_browser:
+            webbrowser.open(f"http://127.0.0.1:{existing_port}/")
+        # Logger may not be configured yet — print is fine for this diagnostic.
+        print(f"backtester: another instance is running at port {existing_port}; opening browser", file=sys.stderr)
+        return 0
 
     _configure_logging()
     log = logging.getLogger("launcher")

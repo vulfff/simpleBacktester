@@ -63,3 +63,28 @@ def test_launcher_serves_health_and_shuts_down(tmp_path):
             raise AssertionError("launcher did not shut down within 10s of SIGTERM")
 
     assert proc.returncode in (0, -signal.SIGTERM, signal.SIGTERM, 1)
+
+
+def test_second_launcher_exits_when_first_is_running(tmp_path):
+    env = os.environ.copy()
+    env["BACKTESTER_DATA_DIR"] = str(tmp_path)
+    p1 = subprocess.Popen(
+        [sys.executable, str(REPO / "backtester_launcher.py"), "--no-browser", "--no-tray", "--port", "0"],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        port = _read_port_from_lockfile(tmp_path)
+        assert _wait_for_health(port)
+
+        p2 = subprocess.run(
+            [sys.executable, str(REPO / "backtester_launcher.py"), "--no-browser", "--no-tray", "--port", "0"],
+            env=env, capture_output=True, timeout=15,
+        )
+        assert p2.returncode == 0, p2.stderr.decode(errors="replace")
+    finally:
+        p1.terminate()
+        try:
+            p1.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p1.kill()
+            p1.wait(timeout=5)
