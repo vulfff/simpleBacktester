@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE || ''
 
 const ACCENT = '#f59e0b'   // amber — distinct from strategy (blue) and indicator (purple) chats
 
@@ -38,9 +38,9 @@ export default function Analyzer() {
   useEffect(() => {
     setLoadingList(true)
     Promise.all([
-      fetch(`${API_BASE}/db/strategies`).then(r => r.json()),
-      fetch(`${API_BASE}/db/indicators`).then(r => r.json()),
-      fetch(`${API_BASE}/db/model-keys`).then(r => r.json()),
+      fetch(`${API_BASE}/api/db/strategies`).then(r => r.json()),
+      fetch(`${API_BASE}/api/db/indicators`).then(r => r.json()),
+      fetch(`${API_BASE}/api/db/model-keys`).then(r => r.json()),
     ])
       .then(([sd, id, md]) => {
         setStrategies(sd.strategies || [])
@@ -86,7 +86,7 @@ export default function Analyzer() {
     setSending(true)
 
     try {
-      const resp = await fetch(`${API_BASE}/ai/analyze`, {
+      const resp = await fetch(`${API_BASE}/api/ai/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

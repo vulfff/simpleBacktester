@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AIStrategyChat } from './AIStrategyChat';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // ─── Time helpers ─────────────────────────────────────────────────────────────
 const minutesToTime = m => {
@@ -645,8 +645,8 @@ export default function StrategyBuilder() {
   const [loadedStrategyId, setLoadedStrategyId] = useState(null);
   const [loadedStrategyIsBuiltin, setLoadedStrategyIsBuiltin] = useState(false);
 
-  useEffect(() => { fetch(`${API_BASE}/db/indicators`).then(r=>r.json()).then(d=>setCIs(d.indicators||[])).catch(()=>{}); }, []);
-  useEffect(() => { fetch(`${API_BASE}/db/strategies`).then(r=>r.json()).then(d=>setSavedStrategies(d.strategies||[])).catch(()=>{}); }, []);
+  useEffect(() => { fetch(`${API_BASE}/api/db/indicators`).then(r=>r.json()).then(d=>setCIs(d.indicators||[])).catch(()=>{}); }, []);
+  useEffect(() => { fetch(`${API_BASE}/api/db/strategies`).then(r=>r.json()).then(d=>setSavedStrategies(d.strategies||[])).catch(()=>{}); }, []);
 
   // Auto-correct selectedRole whenever rules change: if selectedRole has no rules but others do, switch to the first available role
   useEffect(() => {
@@ -700,7 +700,7 @@ export default function StrategyBuilder() {
       const name = aiGeneratedStrategy.name || 'AI Strategy';
       const aiPayload = { name, rules: aiGeneratedStrategy.rules || [] };
       const aiConfigStr = JSON.stringify({ rule_set: aiPayload });
-      await fetch(`${API_BASE}/db/strategies`, {
+      await fetch(`${API_BASE}/api/db/strategies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ strategies: [{ name, logic: 'rule_based', config: aiConfigStr }] })
@@ -730,10 +730,10 @@ export default function StrategyBuilder() {
     setSaving(true);
     try {
       const configStr = JSON.stringify({ rule_set: payload });
-      const r = await fetch(`${API_BASE}/db/strategies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ strategies:[{ name:ruleSetName, logic:'rule_based', config:configStr }] }) });
+      const r = await fetch(`${API_BASE}/api/db/strategies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ strategies:[{ name:ruleSetName, logic:'rule_based', config:configStr }] }) });
       if (!r.ok) throw new Error('Save failed');
       // Re-fetch to get server-assigned id so delete works without a page refresh
-      const fresh = await fetch(`${API_BASE}/db/strategies`).then(r => r.json());
+      const fresh = await fetch(`${API_BASE}/api/db/strategies`).then(r => r.json());
       setSavedStrategies(fresh.strategies || []);
       const saved = (fresh.strategies || []).find(s => s.name === ruleSetName);
       if (saved?.id) setLoadedStrategyId(saved.id);
@@ -758,7 +758,7 @@ export default function StrategyBuilder() {
   const deleteLoadedStrategy = async () => {
     if (!loadedStrategyId) return;
     if (!window.confirm(t('strategy.deleteConfirm', { name: ruleSetName }))) return;
-    await fetch(`${API_BASE}/db/strategies/${loadedStrategyId}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/api/db/strategies/${loadedStrategyId}`, { method: 'DELETE' });
     setSavedStrategies(prev => prev.filter(s => s.id !== loadedStrategyId));
     setLoadedStrategyId(null);
     setLoadedStrategyIsBuiltin(false);

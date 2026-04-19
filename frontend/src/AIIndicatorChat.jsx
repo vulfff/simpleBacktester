@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export function AIIndicatorChat({ onIndicatorGenerated }) {
   const { t, i18n } = useTranslation();
@@ -15,7 +15,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/db/model-keys`)
+    fetch(`${API_BASE}/api/db/model-keys`)
       .then(r => r.json())
       .then(d => {
         const active = (d.keys || []).find(k => k.active)
@@ -42,7 +42,7 @@ export function AIIndicatorChat({ onIndicatorGenerated }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/ai/build-indicator`, {
+      const response = await fetch(`${API_BASE}/api/ai/build-indicator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

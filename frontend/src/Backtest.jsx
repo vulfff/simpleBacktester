@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const API = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_BASE || ''
 const TFS = ['1m','5m','15m','30m','1h','4h','1d','1w','1M']
 
 // ── Ticker search combobox ─────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ function TickerSearch({ value, onChange, disabled }) {
     debounceRef.current = setTimeout(async () => {
       setLoading(true)
       try {
-        const r = await fetch(`${API}/data/search-tickers?q=${encodeURIComponent(q)}`)
+        const r = await fetch(`${API}/api/data/search-tickers?q=${encodeURIComponent(q)}`)
         if (!r.ok) { setResults([]); return }
         const d = await r.json()
         setResults(d.results || [])
@@ -148,7 +148,7 @@ export default function Backtest({ goTo }) {
   const [allowFractional, setAllowFractional] = useState(false) // false=stocks/futures, true=crypto
 
   useEffect(() => {
-    fetch(`${API}/db/strategies`).then(r=>r.json()).then(d => {
+    fetch(`${API}/api/db/strategies`).then(r=>r.json()).then(d => {
       const arr = (d.strategies||[]).map(s => ({
         ...s, config: (() => { try { return JSON.parse(s.config) } catch { return s.config } })()
       }))
@@ -183,7 +183,7 @@ export default function Backtest({ goTo }) {
           rows = dataCache.get(key)
           setFromCache(true)
         } else {
-          const dr = await fetch(`${API}/data/fetch`, {
+          const dr = await fetch(`${API}/api/data/fetch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ticker, start_date: startDate, end_date: endDate, timeframe }),
@@ -213,7 +213,7 @@ export default function Backtest({ goTo }) {
       form.append('commission_value', commValue || '0')
       form.append('allow_fractional', allowFractional ? 'true' : 'false')
 
-      const res = await fetch(`${API}/backtest/upload`, { method:'POST', body:form })
+      const res = await fetch(`${API}/api/backtest/upload`, { method:'POST', body:form })
       if (!res.ok) {
         const d = await res.json().catch(()=>({}))
         throw new Error(d.detail || `Server error ${res.status}`)
