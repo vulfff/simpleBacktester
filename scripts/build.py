@@ -43,8 +43,22 @@ def post_windows() -> None:
 
 
 def post_macos() -> None:
-    # Phase 6 wires hdiutil here.
-    print("skip: macOS .dmg packaging not yet wired (Phase 6 task)")
+    release = ROOT / "dist" / "release"
+    release.mkdir(parents=True, exist_ok=True)
+    app_bundle = ROOT / "dist" / "Backtester.app"
+    dmg = release / "Backtester-1.0.0.dmg"
+    if dmg.exists():
+        dmg.unlink()
+    if not app_bundle.exists():
+        # PyInstaller writes a folder; build an .app wrapper here if missing.
+        sys.exit(f"missing {app_bundle} - adjust .spec to produce a .app bundle on macOS")
+    run([
+        "hdiutil", "create",
+        "-volname", "Backtester",
+        "-srcfolder", str(app_bundle),
+        "-ov", "-format", "UDZO",
+        str(dmg),
+    ])
 
 
 def post_linux() -> None:

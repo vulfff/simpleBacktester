@@ -78,3 +78,13 @@ coll = COLLECT(
     upx_exclude=[],
     name="Backtester",
 )
+
+import sys as _sys
+if _sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="Backtester.app",
+        icon=str(ROOT / "assets" / "icon.icns"),
+        bundle_identifier="org.backtester.Backtester",
+        info_plist={"LSUIElement": True},  # tray-only, no Dock icon
+    )
