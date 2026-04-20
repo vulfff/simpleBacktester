@@ -62,8 +62,46 @@ def post_macos() -> None:
 
 
 def post_linux() -> None:
-    # Phase 6 wires AppImage + .deb here.
-    print("skip: linux .AppImage / .deb packaging not yet wired (Phase 6 task)")
+    release = ROOT / "dist" / "release"
+    release.mkdir(parents=True, exist_ok=True)
+
+    # AppImage
+    appdir = ROOT / "dist" / "Backtester.AppDir"
+    if appdir.exists():
+        shutil.rmtree(appdir)
+    shutil.copytree(ROOT / "dist" / "Backtester", appdir / "usr" / "bin")
+    shutil.copy(ROOT / "scripts" / "backtester.desktop", appdir / "backtester.desktop")
+    shutil.copy(ROOT / "assets" / "icon.png", appdir / "backtester.png")
+    apprun = appdir / "AppRun"
+    apprun.write_text("#!/bin/sh\nexec \"$(dirname \"$0\")/usr/bin/Backtester\" \"$@\"\n")
+    apprun.chmod(0o755)
+    if shutil.which("appimagetool"):
+        run(["appimagetool", str(appdir), str(release / "Backtester-1.0.0-x86_64.AppImage")])
+    else:
+        print("skip: appimagetool missing - AppImage not built")
+
+    # Debian package
+    deb_root = ROOT / "dist" / "deb"
+    if deb_root.exists():
+        shutil.rmtree(deb_root)
+    (deb_root / "DEBIAN").mkdir(parents=True)
+    (deb_root / "opt" / "backtester").mkdir(parents=True)
+    (deb_root / "usr" / "share" / "applications").mkdir(parents=True)
+    shutil.copytree(ROOT / "dist" / "Backtester", deb_root / "opt" / "backtester", dirs_exist_ok=True)
+    shutil.copy(ROOT / "scripts" / "backtester.desktop", deb_root / "usr" / "share" / "applications" / "backtester.desktop")
+    (deb_root / "DEBIAN" / "control").write_text(
+        "Package: backtester\n"
+        "Version: 1.0.0\n"
+        "Section: misc\n"
+        "Priority: optional\n"
+        "Architecture: amd64\n"
+        "Maintainer: Backtester Team <noreply@example.com>\n"
+        "Description: Algorithmic trading backtester (desktop)\n"
+    )
+    if shutil.which("dpkg-deb"):
+        run(["dpkg-deb", "--build", str(deb_root), str(release / "backtester_1.0.0_amd64.deb")])
+    else:
+        print("skip: dpkg-deb missing - .deb not built")
 
 
 def main() -> int:
