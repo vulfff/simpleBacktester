@@ -1,0 +1,103 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, arch: x64,   artifact_glob: 'dist/release/*' }
+          - { os: macos-13,       arch: x64,   artifact_glob: 'dist/release/*' }
+          - { os: macos-14,       arch: arm64, artifact_glob: 'dist/release/*' }
+          - { os: ubuntu-22.04,   arch: x64,   artifact_glob: 'dist/release/*' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg fuse libfuse2 imagemagick xdg-utils
+          sudo wget -O /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          sudo chmod +x /usr/local/bin/appimagetool
+
+      - name: Install Windows packaging tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis -y
+
+      - name: Install Python deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Build
+        run: python scripts/build.py
+
+      - name: Smoke test packaged binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p /tmp/btest_smoke
+          BACKTESTER_DATA_DIR=/tmp/btest_smoke ./dist/Backtester/Backtester --no-browser --no-tray --port 0 &
+          PID=$!
+          exit_smoke=1
+          for i in $(seq 1 30); do
+            if [ -f /tmp/btest_smoke/backtester.lock ]; then
+              PORT=$(python -c "import json; print(json.load(open('/tmp/btest_smoke/backtester.lock'))['port'])")
+              if curl -sf "http://127.0.0.1:$PORT/api/health"; then exit_smoke=0; break; fi
+            fi
+            sleep 1
+          done
+          kill $PID
+          wait $PID 2>/dev/null || true
+          test "$exit_smoke" = "0"
+
+      - name: Smoke test packaged binary (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p /tmp/btest_smoke
+          BACKTESTER_DATA_DIR=/tmp/btest_smoke ./dist/Backtester.app/Contents/MacOS/Backtester --no-browser --no-tray --port 0 &
+          PID=$!
+          exit_smoke=1
+          for i in $(seq 1 30); do
+            if [ -f /tmp/btest_smoke/backtester.lock ]; then
+              PORT=$(python -c "import json; print(json.load(open('/tmp/btest_smoke/backtester.lock'))['port'])")
+              if curl -sf "http://127.0.0.1:$PORT/api/health"; then exit_smoke=0; break; fi
+            fi
+            sleep 1
+          done
+          kill $PID
+          wait $PID 2>/dev/null || true
+          test "$exit_smoke" = "0"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ matrix.artifact_glob }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
