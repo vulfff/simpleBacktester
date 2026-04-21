@@ -48,7 +48,13 @@ def _start_uvicorn(port: int):
     import uvicorn
     import api
 
-    config = uvicorn.Config(api.app, host="127.0.0.1", port=port, log_level="info")
+    config = uvicorn.Config(
+        api.app,
+        host="127.0.0.1",
+        port=port,
+        log_level="info",
+        log_config=None,  # avoid dictConfig in frozen/windowed bundle (stdout is null)
+    )
     server = uvicorn.Server(config)
 
     thread = threading.Thread(target=server.run, name="uvicorn", daemon=False)
