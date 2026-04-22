@@ -12,6 +12,7 @@ import os
 import base64
 import io
 import tempfile
+import time
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -196,9 +197,9 @@ from routes_ai import router as ai_router
 from routes_data import router as data_router
 from routes_db import router as db_router
 
-app.include_router(ai_router)
-app.include_router(data_router)
-app.include_router(db_router)
+app.include_router(ai_router, prefix="/api")
+app.include_router(data_router, prefix="/api")
+app.include_router(db_router, prefix="/api")
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -221,19 +222,49 @@ class BacktestResult(BaseModel):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-@app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+@app.get("/api/health")
+def health() -> Dict[str, Any]:
+    return {"ok": True, "status": "ok"}
 
 
-@app.get("/strategies")
+# ── Version / update-check ─────────────────────────────────────────────────────
+
+_VERSION = "1.0.0"
+_GITHUB_REPO = "vulfff/simpleBacktester"  # TODO: set to actual repo before release
+_version_cache: dict = {"ts": 0.0, "data": {"current": _VERSION, "latest": None, "url": None}}
+
+
+@app.get("/api/version")
+def version():
+    import httpx as _httpx
+    now = time.time()
+    if now - _version_cache["ts"] < 3600:
+        return _version_cache["data"]
+    data = {"current": _VERSION, "latest": None, "url": None}
+    try:
+        r = _httpx.get(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest",
+            timeout=3.0, headers={"Accept": "application/vnd.github+json"},
+        )
+        if r.status_code == 200:
+            j = r.json()
+            data["latest"] = j.get("tag_name", "").lstrip("v") or None
+            data["url"] = j.get("html_url")
+    except Exception:
+        pass
+    _version_cache["ts"] = now
+    _version_cache["data"] = data
+    return data
+
+
+@app.get("/api/strategies")
 def strategies_list() -> Dict[str, Any]:
     return {"strategies": list_strategies()}
 
 
 # ── Backtest (upload or pre-fetched JSON data) ────────────────────────────────
 
-@app.post("/backtest/upload", response_model=BacktestResult)
+@app.post("/api/backtest/upload", response_model=BacktestResult)
 async def backtest_upload(
     file: Optional[UploadFile] = File(default=None),
     data: Optional[str]        = Form(default=None),
@@ -435,3 +466,11 @@ def _run_backtest(
         run_id=run_id, warmup_bars=warmup, equity_curve=equity_curve,
         metrics=mets, trade_log=trade_log_dicts, signal_log=signal_log_dicts,
     )
+
+
+from fastapi.staticfiles import StaticFiles
+import paths
+
+_dist = paths.frontend_dist_dir()
+if _dist.exists():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")

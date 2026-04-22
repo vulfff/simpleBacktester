@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AIIndicatorChat } from './AIIndicatorChat';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // ─── Human-readable building blocks ──────────────────────────────────────────
 
@@ -515,12 +515,12 @@ export default function IndicatorBuilder() {
   const [savedStrategies, setSavedStrategies] = useState([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/db/strategies`).then(r => r.json()).then(d => setSavedStrategies(d.strategies || [])).catch(() => {});
+    fetch(`${API_BASE}/api/db/strategies`).then(r => r.json()).then(d => setSavedStrategies(d.strategies || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/db/indicators`)
+    fetch(`${API_BASE}/api/db/indicators`)
       .then(r => r.json())
       .then(d => {
         const loaded = (d.indicators || []).map(ind => {
@@ -620,7 +620,7 @@ export default function IndicatorBuilder() {
         color: ind.color,
         expr: buildExpr(ind.blocks, ind.ops || []),
       }));
-      await fetch(`${API_BASE}/db/indicators`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ indicators: payload }) });
+      await fetch(`${API_BASE}/api/db/indicators`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ indicators: payload }) });
       alert(t('indicator.indicatorsSaved'));
     } catch { setError(t('indicator.failedSave')); }
     finally { setSaving(false); }

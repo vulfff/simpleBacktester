@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // ── Provider / model metadata ─────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ function DataProviderPanel() {
 
   const load = () => {
     setLoading(true);
-    fetch(`${API_BASE}/db/data-keys`)
+    fetch(`${API_BASE}/api/db/data-keys`)
       .then(r => r.json())
       .then(d => setKeys(d.keys || []))
       .catch(() => {})
@@ -152,7 +152,7 @@ function DataProviderPanel() {
     if (!apiKey) { setError(t('keys.pasteKey')); return; }
     setError(''); setSaving(true);
     try {
-      const r = await fetch(`${API_BASE}/db/data-keys`, {
+      const r = await fetch(`${API_BASE}/api/db/data-keys`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service, key: apiKey, protected: protect, password: protect ? password : undefined, label, activate: true }),
       });
@@ -165,7 +165,7 @@ function DataProviderPanel() {
 
   const activate = async id => {
     try {
-      const r = await fetch(`${API_BASE}/db/data-keys/${id}/activate`, { method: 'POST' });
+      const r = await fetch(`${API_BASE}/api/db/data-keys/${id}/activate`, { method: 'POST' });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Activate failed'); }
       load();
     } catch (e) { setError(e.message); }
@@ -173,7 +173,7 @@ function DataProviderPanel() {
 
   const remove = async id => {
     try {
-      const r = await fetch(`${API_BASE}/db/data-keys/${id}`, { method: 'DELETE' });
+      const r = await fetch(`${API_BASE}/api/db/data-keys/${id}`, { method: 'DELETE' });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Delete failed'); }
       load();
     } catch (e) { setError(e.message); }
@@ -289,7 +289,7 @@ function AIModelPanel() {
 
   const load = () => {
     setLoading(true);
-    fetch(`${API_BASE}/db/model-keys`)
+    fetch(`${API_BASE}/api/db/model-keys`)
       .then(r => r.json())
       .then(d => setKeys(d.keys || []))
       .catch(() => {})
@@ -317,7 +317,7 @@ function AIModelPanel() {
     }
     setError(''); setSaving(true);
     try {
-      const r = await fetch(`${API_BASE}/db/model-keys`, {
+      const r = await fetch(`${API_BASE}/api/db/model-keys`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName, provider: providerToSave, key: apiKey, protected: protect, password: protect ? password : undefined, label, activate: true }),
       });
@@ -331,7 +331,7 @@ function AIModelPanel() {
 
   const activate = async id => {
     try {
-      const r = await fetch(`${API_BASE}/db/model-keys/${id}/activate`, { method: 'POST' });
+      const r = await fetch(`${API_BASE}/api/db/model-keys/${id}/activate`, { method: 'POST' });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Activate failed'); }
       load();
     } catch (e) { setError(e.message); }
@@ -339,7 +339,7 @@ function AIModelPanel() {
 
   const remove = async id => {
     try {
-      const r = await fetch(`${API_BASE}/db/model-keys/${id}`, { method: 'DELETE' });
+      const r = await fetch(`${API_BASE}/api/db/model-keys/${id}`, { method: 'DELETE' });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Delete failed'); }
       load();
     } catch (e) { setError(e.message); }
@@ -438,7 +438,7 @@ function AIModelPanel() {
               onClick={async () => {
                 setFetching(true); setFetchError('');
                 try {
-                  const r = await fetch(`${API_BASE}/ai/list-models`, {
+                  const r = await fetch(`${API_BASE}/api/ai/list-models`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ provider: detectedProvider, api_key: apiKey }),
                   });

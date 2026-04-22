@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Brush,
 } from 'recharts'
 
-const API = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_BASE || ''
 
 const RUN_COLORS = ['#3ab7f5', '#2fd89a', '#f9c74f', '#e879c0', '#fb923c']
 
@@ -381,7 +381,7 @@ export default function Analytics() {
 
   // Fetch active AI model for the analysis tab badge/guard
   useEffect(() => {
-    fetch(`${API}/db/model-keys`)
+    fetch(`${API}/api/db/model-keys`)
       .then(r => r.json())
       .then(d => {
         const active = d.keys?.find(k => k.active)
@@ -399,7 +399,7 @@ export default function Analytics() {
   async function fetchRuns() {
     setLoadingRuns(true)
     try {
-      const r = await fetch(`${API}/db/runs`)
+      const r = await fetch(`${API}/api/db/runs`)
       const j = await r.json()
       setRuns(j.runs || [])
     } catch (e) {
@@ -424,7 +424,7 @@ export default function Analytics() {
     setSelectedRun(null)
     setLoading(true)
     try {
-      const r = await fetch(`${API}/db/runs/${id}`)
+      const r = await fetch(`${API}/api/db/runs/${id}`)
       setSelectedRun(await r.json())
     } catch (e) {
       setError(t('analytics.failedLoadRun', { message: e.message }))
@@ -447,7 +447,7 @@ export default function Analytics() {
     setCompareData(prev => {
       if (prev[id] || _compareFetching.current.has(id)) return prev
       _compareFetching.current.add(id)
-      fetch(`${API}/db/runs/${id}`)
+      fetch(`${API}/api/db/runs/${id}`)
         .then(r => r.json())
         .then(j => setCompareData(p => ({ ...p, [id]: j })))
         .catch(() => {})
@@ -467,7 +467,7 @@ export default function Analytics() {
   const deleteRun = useCallback(async (id) => {
     if (!confirm(t('analytics.confirmDelete'))) return
     try {
-      const r = await fetch(`${API}/db/runs/${id}`, { method: 'DELETE' })
+      const r = await fetch(`${API}/api/db/runs/${id}`, { method: 'DELETE' })
       if (!r.ok) throw new Error((await r.json()).detail || 'Delete failed')
       setRuns(p => p.filter(r => r.id !== id))
       if (selectedId === id) { setSelectedId(null); setSelectedRun(null) }
@@ -484,7 +484,7 @@ export default function Analytics() {
     const n = deleteIds.length
     if (!confirm(t('analytics.confirmDeleteBatch', { count: n }))) return
     try {
-      const r = await fetch(`${API}/db/runs/batch-delete`, {
+      const r = await fetch(`${API}/api/db/runs/batch-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: deleteIds }),
@@ -504,7 +504,7 @@ export default function Analytics() {
     if (!runs.length) return
     if (!confirm(t('analytics.confirmDeleteAll', { count: runs.length }))) return
     try {
-      const r = await fetch(`${API}/db/runs`, { method: 'DELETE' })
+      const r = await fetch(`${API}/api/db/runs`, { method: 'DELETE' })
       if (!r.ok) throw new Error((await r.json()).detail || 'Delete all failed')
       setRuns([])
       setSelectedId(null); setSelectedRun(null)
@@ -523,7 +523,7 @@ export default function Analytics() {
     setAnalysisInput('')
     setAnalysisPending(true)
     try {
-      const r = await fetch(`${API}/ai/analyze`, {
+      const r = await fetch(`${API}/api/ai/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

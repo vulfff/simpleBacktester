@@ -7,3 +7,20 @@ node_modules/
 frontend/dist/
 .env
 *.egg-info/
+
+# PyInstaller
+build/
+dist/
+*.spec~
+frontend_dist/
+
+# Agent / local-only docs
+.claude/
+CLAUDE.md
+wrapper.md
+docs/superpowers/
+AI_FEATURES.md
+AI_STRATEGY_BUILDER.md
+ARCHITECTURE.md
+INTEGRATION_SUMMARY.md
+fixed_bugs.md
