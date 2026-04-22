@@ -37,6 +37,8 @@ def build_pyinstaller() -> None:
 def post_windows() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
+    zip_path = release / "backtester-1.0.0-windows-x64.zip"
+    shutil.make_archive(str(zip_path.with_suffix("")), "zip", ROOT / "dist", "Backtester")
     nsi = ROOT / "scripts" / "backtester.nsi"
     if shutil.which("makensis") and nsi.exists():
         run(["makensis", str(nsi)], cwd=ROOT)
