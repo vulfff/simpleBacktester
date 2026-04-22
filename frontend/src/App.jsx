@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import './App.css'
 import Backtest from './Backtest'
@@ -7,6 +7,28 @@ import IndicatorBuilder from './IndicatorBuilder'
 import KeyManager from './KeyManager'
 import Analytics from './Analytics'
 import Analyzer from './Analyzer'
+
+function UpdateBanner() {
+  const [info, setInfo] = useState(null)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/version').then(r => r.json()).then(setInfo).catch(() => {})
+  }, [])
+
+  if (!info || !info.latest || dismissed) return null
+  if (info.latest === info.current) return null
+
+  return (
+    <div className="alert alert-warn" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <span>
+        Update available: <strong>{info.latest}</strong> (you are on {info.current}).{' '}
+        {info.url && <a href={info.url} target="_blank" rel="noreferrer">Download</a>}
+      </span>
+      <button className="btn btn-sm" onClick={() => setDismissed(true)}>Dismiss</button>
+    </div>
+  )
+}
 
 const VIEW_IDS = [
   { id: 'backtest',  tKey: 'nav.backtest',  icon: '▶' },
@@ -30,6 +52,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <UpdateBanner />
       <header className="app-topbar">
         <div className="app-logo">
           <div className="app-logo-mark">📊</div>

@@ -12,6 +12,7 @@ import os
 import base64
 import io
 import tempfile
+import time
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -224,6 +225,36 @@ class BacktestResult(BaseModel):
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
     return {"ok": True, "status": "ok"}
+
+
+# ── Version / update-check ─────────────────────────────────────────────────────
+
+_VERSION = "1.0.0"
+_GITHUB_REPO = "backtester/backtester"  # TODO: set to actual repo before release
+_version_cache: dict = {"ts": 0.0, "data": {"current": _VERSION, "latest": None, "url": None}}
+
+
+@app.get("/api/version")
+def version():
+    import httpx as _httpx
+    now = time.time()
+    if now - _version_cache["ts"] < 3600:
+        return _version_cache["data"]
+    data = {"current": _VERSION, "latest": None, "url": None}
+    try:
+        r = _httpx.get(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest",
+            timeout=3.0, headers={"Accept": "application/vnd.github+json"},
+        )
+        if r.status_code == 200:
+            j = r.json()
+            data["latest"] = j.get("tag_name", "").lstrip("v") or None
+            data["url"] = j.get("html_url")
+    except Exception:
+        pass
+    _version_cache["ts"] = now
+    _version_cache["data"] = data
+    return data
 
 
 @app.get("/api/strategies")
