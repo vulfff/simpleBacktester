@@ -35,6 +35,8 @@ def build_pyinstaller() -> None:
 
 
 def post_windows() -> None:
+    release = ROOT / "dist" / "release"
+    release.mkdir(parents=True, exist_ok=True)
     nsi = ROOT / "scripts" / "backtester.nsi"
     if shutil.which("makensis") and nsi.exists():
         run(["makensis", str(nsi)], cwd=ROOT)
@@ -109,7 +111,7 @@ def post_linux() -> None:
         "Section: misc\n"
         "Priority: optional\n"
         "Architecture: amd64\n"
-        "Maintainer: Backtester Team <noreply@example.com>\n"
+        "Maintainer: vulfff <noreply@github.com>\n"
         "Description: Algorithmic trading backtester (desktop)\n"
     )
     if shutil.which("dpkg-deb"):
