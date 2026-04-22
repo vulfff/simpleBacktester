@@ -12,7 +12,6 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, arch: x64,   artifact_glob: 'dist/release/*' }
-          - { os: macos-13,       arch: x64,   artifact_glob: 'dist/release/*' }
           - { os: macos-14,       arch: arm64, artifact_glob: 'dist/release/*' }
           - { os: ubuntu-22.04,   arch: x64,   artifact_glob: 'dist/release/*' }
     runs-on: ${{ matrix.os }}
