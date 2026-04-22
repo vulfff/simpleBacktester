@@ -230,7 +230,7 @@ def health() -> Dict[str, Any]:
 # ── Version / update-check ─────────────────────────────────────────────────────
 
 _VERSION = "1.0.0"
-_GITHUB_REPO = "backtester/backtester"  # TODO: set to actual repo before release
+_GITHUB_REPO = "vulfff/simpleBacktester"  # TODO: set to actual repo before release
 _version_cache: dict = {"ts": 0.0, "data": {"current": _VERSION, "latest": None, "url": None}}
 
 

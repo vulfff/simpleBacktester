@@ -9,7 +9,7 @@ Beginner-friendly backtesting application for validating algorithmic trading str
 
 ## Install
 
-Pre-built installers for Windows, macOS, and Linux are on the [Releases page](https://github.com/backtester/backtester/releases/latest).
+Pre-built installers for Windows, macOS, and Linux are on the [Releases page](https://github.com/vulfff/simpleBacktester/releases/latest).
 
 See [docs/INSTALL.md](docs/INSTALL.md) for step-by-step instructions including Gatekeeper / SmartScreen notes and where your data is stored.
 

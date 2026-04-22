@@ -1,7 +1,7 @@
 # Installing Backtester
 
 ## Windows
-1. Download `backtester-<ver>-windows-x64.exe` from the [Releases page](https://github.com/backtester/backtester/releases/latest).
+1. Download `backtester-<ver>-windows-x64.exe` from the [Releases page](https://github.com/vulfff/simpleBacktester/releases/latest).
 2. Run it. SmartScreen may warn that the publisher is unknown — click **More info** → **Run anyway**. The binary is unsigned (see Roadmap).
 3. The installer adds a Start-menu and Desktop shortcut.
 4. Launch **Backtester** — a tray icon appears and your default browser opens to the app.
