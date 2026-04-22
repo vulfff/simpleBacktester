@@ -3,6 +3,6 @@ Type=Application
 Name=Backtester
 Comment=Algorithmic trading backtester
 Exec=/opt/backtester/Backtester
-Icon=/opt/backtester/assets/icon.png
+Icon=backtester
 Categories=Office;Finance;
 Terminal=false

@@ -42,6 +42,20 @@ def post_windows() -> None:
         print("skip: makensis or backtester.nsi missing — installer not built")
 
 
+def generate_macos_icons() -> None:
+    """Generate icon.icns from icon.png via sips + iconutil (macOS built-ins)."""
+    png = ROOT / "assets" / "icon.png"
+    icns = ROOT / "assets" / "icon.icns"
+    if icns.exists():
+        return
+    iconset = ROOT / "assets" / "icon.iconset"
+    iconset.mkdir(exist_ok=True)
+    for s in [16, 32, 64, 128, 256, 512, 1024]:
+        run(["sips", "-z", str(s), str(s), str(png), "--out", str(iconset / f"icon_{s}x{s}.png")])
+    run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns)])
+    shutil.rmtree(iconset)
+
+
 def post_macos() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
@@ -113,6 +127,8 @@ def main() -> int:
     check_prereqs()
     if not args.skip_frontend:
         build_frontend()
+    if sys.platform == "darwin":
+        generate_macos_icons()
     build_pyinstaller()
     if not args.skip_installer:
         if sys.platform.startswith("win"):
