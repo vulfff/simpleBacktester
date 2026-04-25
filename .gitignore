@@ -24,3 +24,7 @@ AI_STRATEGY_BUILDER.md
 ARCHITECTURE.md
 INTEGRATION_SUMMARY.md
 fixed_bugs.md
+
+# Git worktrees
+.worktrees/
+.pytest_cache/
