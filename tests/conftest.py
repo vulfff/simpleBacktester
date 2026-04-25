@@ -92,7 +92,11 @@ def price_series_factory():
         elif pattern == "flat":
             price = kwargs.get("price", 100.0)
             for i in range(n_bars):
-                ticks.append(_make_tick(i, price, price))
+                ts = datetime(2024, 1, 1) + timedelta(days=i)
+                ticks.append(TickData(
+                    name="ASSET", close=price, open=price,
+                    high=price, low=price, volume=1000.0, time=ts
+                ))
 
         elif pattern == "volatile":
             sigma = kwargs.get("sigma", 0.03)
@@ -251,12 +255,18 @@ def fresh_registry():
 def test_client(tmp_path_factory):
     """
     Spins up a FastAPI TestClient pointed at a temp SQLite database.
-    DB path is set via BACKTESTER_DATA_DIR env var (paths.py resolution).
+
+    Sets BACKTESTER_DATA_DIR before any api/db import so paths.py resolves
+    to the temp dir, then patches db.DB_PATH (if present) and re-runs
+    create_tables() against the isolated DB.
     """
-    import os
+    import importlib
     tmp = tmp_path_factory.mktemp("db")
-    # paths.py uses BACKTESTER_DATA_DIR to resolve db_path()
     os.environ["BACKTESTER_DATA_DIR"] = str(tmp)
+
+    # Import (or reload) db so create_tables() runs against the temp path
+    import db as _db
+    _db.create_tables()
 
     from api import app
     from fastapi.testclient import TestClient
