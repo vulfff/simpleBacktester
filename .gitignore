@@ -24,3 +24,6 @@ AI_STRATEGY_BUILDER.md
 ARCHITECTURE.md
 INTEGRATION_SUMMARY.md
 fixed_bugs.md
+
+# Test fixtures (real data, auto-fetched)
+tests/fixtures/real/
