@@ -272,6 +272,8 @@ def match_round_trips_from_dicts(fills: List[Dict[str, Any]]) -> List[Dict[str, 
         qty    = float(f.get("qty", 0))
         t      = f.get("t", "")
 
+        if qty <= 0:
+            continue  # skip zero/negative-qty fills
         if action == "buy":
             long_q[sym].append({"price": price, "qty": qty, "t": t})
         elif action == "sell":
