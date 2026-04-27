@@ -14,26 +14,37 @@ const DATA_PROVIDERS = [
 ];
 
 const AI_MODELS = [
-  // Anthropic
-  { id: 'claude-opus-4-6',            label: 'Claude Opus 4.6',      provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Most capable Anthropic model. Best for complex reasoning.',            keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
-  { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6',    provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Latest Sonnet. Excellent speed and capability balance.',               keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
-  { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet',    provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Highly capable. Great for complex strategy generation tasks.',         keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
-  { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku',     provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Fast and affordable Anthropic model.',                               keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
-  // OpenAI
-  { id: 'gpt-4.1',                    label: 'GPT-4.1',              provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Flagship GPT-4.1. Best OpenAI reasoning and instruction following.',  keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  { id: 'gpt-4.1-mini',               label: 'GPT-4.1 Mini',         provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Fast and affordable GPT-4.1 variant.',                               keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  { id: 'gpt-4o',                     label: 'GPT-4o',               provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Fast multimodal flagship. Excellent speed + capability balance.',     keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  { id: 'gpt-4o-mini',                label: 'GPT-4o Mini',          provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Affordable and fast. Good for most strategy tasks.',                  keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  { id: 'o3',                         label: 'o3',                   provider: 'openai',    providerLabel: 'OpenAI',    desc: 'OpenAI o3 reasoning model. Strongest for complex analysis.',          keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  { id: 'o4-mini',                    label: 'o4-mini',              provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Efficient o4 reasoning model.',                                       keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
-  // xAI
-  { id: 'grok-3',                     label: 'Grok-3',               provider: 'grok',      providerLabel: 'xAI',       desc: 'Latest xAI flagship model.',                                         keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
-  { id: 'grok-3-mini',                label: 'Grok-3 Mini',          provider: 'grok',      providerLabel: 'xAI',       desc: 'Fast and efficient Grok-3 variant.',                                  keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
-  { id: 'grok-2',                     label: 'Grok-2',               provider: 'grok',      providerLabel: 'xAI',       desc: 'Stable xAI model with strong reasoning.',                            keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
-  // Google
-  { id: 'gemini-2.5-pro',             label: 'Gemini 2.5 Pro',       provider: 'gemini',    providerLabel: 'Google',    desc: 'Most capable Gemini model. Best for complex tasks.',                  keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
-  { id: 'gemini-2.5-flash',           label: 'Gemini 2.5 Flash',     provider: 'gemini',    providerLabel: 'Google',    desc: 'Fast Gemini 2.5 variant. Good speed/quality tradeoff.',               keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
-  { id: 'gemini-2.0-flash',           label: 'Gemini 2.0 Flash',     provider: 'gemini',    providerLabel: 'Google',    desc: 'Proven fast Gemini model. Strong performance.',                       keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  // Anthropic — verified from official SDK (Apr 2026)
+  { id: 'claude-opus-4-7',              label: 'Claude Opus 4.7',            provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Most capable Anthropic model. Best for complex reasoning and agentic coding.',  keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
+  { id: 'claude-sonnet-4-6',            label: 'Claude Sonnet 4.6',          provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Best speed/intelligence balance. Recommended for most tasks.',                  keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
+  { id: 'claude-haiku-4-5-20251001',    label: 'Claude Haiku 4.5',           provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Fastest Anthropic model with near-frontier intelligence.',                      keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
+  { id: 'claude-opus-4-6',              label: 'Claude Opus 4.6',            provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Previous Opus. Still highly capable.',                                          keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
+  { id: 'claude-sonnet-4-5-20250929',   label: 'Claude Sonnet 4.5',          provider: 'anthropic', providerLabel: 'Anthropic', desc: 'Previous Sonnet. Fast and reliable.',                                           keyHint: 'Starts with sk-ant-', url: 'https://console.anthropic.com/' },
+  // OpenAI — verified from official openai-python SDK (Apr 2026)
+  { id: 'gpt-5.4',                      label: 'GPT-5.4',                    provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Latest OpenAI flagship. Highest capability.',                                   keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-5.4-mini',                 label: 'GPT-5.4 Mini',               provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Affordable GPT-5.4 variant. Great speed/cost ratio.',                          keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-5.4-nano',                 label: 'GPT-5.4 Nano',               provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Cheapest GPT-5.4. Best for high-volume tasks.',                                 keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-5',                        label: 'GPT-5',                      provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Stable GPT-5 generation. Strong all-round performance.',                        keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-5-mini',                   label: 'GPT-5 Mini',                 provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Affordable GPT-5. Good for most strategy tasks.',                               keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-4.1',                      label: 'GPT-4.1',                    provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Reliable GPT-4.1 series. Proven for instruction following.',                    keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-4.1-mini',                 label: 'GPT-4.1 Mini',               provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Fast and affordable GPT-4.1 variant.',                                          keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'gpt-4o',                       label: 'GPT-4o',                     provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Multimodal model. Still widely used.',                                          keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'o4-mini',                      label: 'o4-mini',                    provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Best reasoning per dollar. Great for complex analysis.',                        keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'o3',                           label: 'o3',                         provider: 'openai',    providerLabel: 'OpenAI',    desc: 'OpenAI o3 reasoning model.',                                                    keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  { id: 'o3-mini',                      label: 'o3-mini',                    provider: 'openai',    providerLabel: 'OpenAI',    desc: 'Efficient o3 reasoning model.',                                                 keyHint: 'Starts with sk-',     url: 'https://platform.openai.com/api-keys' },
+  // xAI — verified from LiteLLM source + xAI docs (Apr 2026)
+  { id: 'grok-4',                       label: 'Grok-4',                     provider: 'grok',      providerLabel: 'xAI',       desc: 'xAI Grok-4 flagship model.',                                                    keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
+  { id: 'grok-4-1-fast-non-reasoning',  label: 'Grok-4.1 Fast',              provider: 'grok',      providerLabel: 'xAI',       desc: 'Fast Grok-4.1 for agentic tasks. 2M context window.',                          keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
+  { id: 'grok-4-1-fast-reasoning',      label: 'Grok-4.1 Fast (Reasoning)',  provider: 'grok',      providerLabel: 'xAI',       desc: 'Grok-4.1 with reasoning. Best for complex analysis tasks.',                    keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
+  { id: 'grok-3',                       label: 'Grok-3',                     provider: 'grok',      providerLabel: 'xAI',       desc: 'Previous Grok generation. Stable and well-tested.',                             keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
+  { id: 'grok-3-mini',                  label: 'Grok-3 Mini',                provider: 'grok',      providerLabel: 'xAI',       desc: 'Lightweight Grok-3 variant.',                                                   keyHint: 'Starts with xai-',    url: 'https://console.x.ai' },
+  // Google — verified from official Gemini API docs (Apr 2026)
+  { id: 'gemini-3.1-pro-preview',       label: 'Gemini 3.1 Pro (Preview)',   provider: 'gemini',    providerLabel: 'Google',    desc: 'Latest Gemini. Advanced reasoning and agentic capabilities.',                   keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  { id: 'gemini-3-flash-preview',       label: 'Gemini 3 Flash (Preview)',   provider: 'gemini',    providerLabel: 'Google',    desc: 'Frontier performance at lower cost.',                                            keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  { id: 'gemini-3.1-flash-lite-preview',label: 'Gemini 3.1 Flash Lite (Preview)', provider: 'gemini', providerLabel: 'Google', desc: 'Fast and budget-friendly Gemini 3.',                                            keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  { id: 'gemini-2.5-pro',               label: 'Gemini 2.5 Pro',             provider: 'gemini',    providerLabel: 'Google',    desc: 'Stable, most advanced Gemini 2.5. Best price-performance for reasoning.',      keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  { id: 'gemini-2.5-flash',             label: 'Gemini 2.5 Flash',           provider: 'gemini',    providerLabel: 'Google',    desc: 'Stable fast Gemini 2.5. Best for most tasks.',                                  keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
+  { id: 'gemini-2.5-flash-lite',        label: 'Gemini 2.5 Flash Lite',      provider: 'gemini',    providerLabel: 'Google',    desc: 'Fastest and cheapest stable Gemini.',                                           keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
 ];
 
 const PROVIDER_COLORS = { anthropic: '#f59e0b', openai: '#10b981', grok: '#8b5cf6', gemini: '#3b82f6' };
@@ -286,6 +297,7 @@ function AIModelPanel() {
   const [fetchedModels, setFetchedModels]       = useState([]);
   const [fetching, setFetching]                 = useState(false);
   const [fetchError, setFetchError]             = useState('');
+  const [customModelId, setCustomModelId]       = useState('');
 
   const load = () => {
     setLoading(true);
@@ -305,25 +317,29 @@ function AIModelPanel() {
     return acc;
   }, {});
 
+  const effectiveModelName = modelName === '__custom__' ? customModelId.trim() : modelName;
+
   const save = async () => {
     if (!modelName) { setError(t('keys.chooseModel')); return; }
+    if (modelName === '__custom__' && !customModelId.trim()) { setError(t('keys.enterCustomModel')); return; }
     if (!apiKey) { setError(t('keys.pasteKey')); return; }
-    const knownModel = AI_MODELS.find(m => m.id === modelName);
+    const knownModel = AI_MODELS.find(m => m.id === effectiveModelName);
     const providerToSave = knownModel?.provider || detectedProvider || '';
-    // F11: validate that key provider matches selected model provider
+    if (!providerToSave) { setError('Could not detect provider from API key prefix. Paste your key first.'); return; }
+    // validate that key provider matches selected model provider (only for known models)
     if (knownModel?.provider && detectedProvider && knownModel.provider !== detectedProvider) {
-      setError(t('keys.providerMismatch', { model: modelName, expected: knownModel.providerLabel, detected: detectedProvider }));
+      setError(t('keys.providerMismatch', { model: effectiveModelName, expected: knownModel.providerLabel, detected: detectedProvider }));
       return;
     }
     setError(''); setSaving(true);
     try {
       const r = await fetch(`${API_BASE}/api/db/model-keys`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, provider: providerToSave, key: apiKey, protected: protect, password: protect ? password : undefined, label, activate: true }),
+        body: JSON.stringify({ model_name: effectiveModelName, provider: providerToSave, key: apiKey, protected: protect, password: protect ? password : undefined, label, activate: true }),
       });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || 'Save failed'); }
       setApiKey(''); setLabel(''); setModelName(''); setProtect(false); setPassword('');
-      setDetectedProvider(null); setFetchedModels([]); setFetchError('');
+      setDetectedProvider(null); setFetchedModels([]); setFetchError(''); setCustomModelId('');
       load();
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
@@ -391,14 +407,29 @@ function AIModelPanel() {
 
         <div style={{ marginBottom: 10 }}>
           <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.model')}</label>
-          <select value={modelName} style={sStyle} onChange={e => setModelName(e.target.value)}>
+          <select value={modelName} style={sStyle} onChange={e => { setModelName(e.target.value); setCustomModelId(''); }}>
             <option value="">{t('keys.selectModel')}</option>
             {Object.entries(byProvider).map(([prov, models]) => (
               <optgroup key={prov} label={prov}>
                 {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
               </optgroup>
             ))}
+            <option value="__custom__">— Enter custom model ID —</option>
           </select>
+          {modelName === '__custom__' && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                value={customModelId}
+                onChange={e => setCustomModelId(e.target.value)}
+                style={{ ...iStyle, fontFamily: 'ui-monospace, monospace' }}
+                placeholder="e.g. gpt-5, claude-opus-5-0, grok-4 …"
+                autoComplete="off"
+              />
+              <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#4b5563' }}>
+                Provider will be inferred from the API key prefix you paste below.
+              </div>
+            </div>
+          )}
           {selectedModel && (
             <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#6b7280', display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={{ color: PROVIDER_COLORS[selectedModel.provider] || '#6b7280', fontWeight: 600 }}>{selectedModel.providerLabel}</span>
@@ -467,12 +498,13 @@ function AIModelPanel() {
             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>
               {t('keys.modelsOnAccount')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.modelsFound', { count: fetchedModels.length })}</span>
             </label>
-            <select value={modelName} style={sStyle} onChange={e => setModelName(e.target.value)}>
+            <select value={modelName} style={sStyle} onChange={e => { setModelName(e.target.value); setCustomModelId(''); }}>
               <option value="">{t('keys.selectAModel')}</option>
               {fetchedModels.map(id => {
                 const known = AI_MODELS.find(m => m.id === id);
                 return <option key={id} value={id}>{known ? known.label : id}</option>;
               })}
+              <option value="__custom__">— Enter custom model ID —</option>
             </select>
             <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#4b5563' }}>
               {t('keys.fetchedLive')}
