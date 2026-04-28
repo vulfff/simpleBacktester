@@ -411,16 +411,7 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
       {showCombiner && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0' }}>
           <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
-          <div style={{ display: 'flex', gap: 3, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 999, padding: '3px' }}>
-            {['and','or'].map(v => (
-              <button key={v} type="button" onClick={() => onChange({ ...cond, combiner: v })}
-                style={{ padding: '2px 12px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', border: 'none', transition: 'all 0.15s',
-                  background: (cond.combiner||'and') === v ? (v==='and'?'rgba(34,211,238,0.2)':'rgba(245,158,11,0.2)') : 'transparent',
-                  color: (cond.combiner||'and') === v ? (v==='and'?'#22d3ee':'#f59e0b') : '#4b5563' }}>
-                {v.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#22d3ee', padding: '2px 10px', background: 'rgba(34,211,238,0.1)', borderRadius: 999, border: '1px solid rgba(34,211,238,0.2)' }}>AND</span>
           <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
         </div>
       )}
