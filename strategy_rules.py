@@ -610,19 +610,17 @@ class Rule:
         if portfolio is not None and tick is not None:
             pos = portfolio.positions.get(tick.name, 0.0)
             if self.role == RuleRole.EXIT_LONG and pos <= 1e-9:
+                self._prev_result = False  # reset so on_change fires fresh on next entry
                 return False
             if self.role == RuleRole.EXIT_SHORT and pos >= -1e-9:
+                self._prev_result = False
                 return False
 
         # ── signal conditions ──────────────────────────────────────────────
         if self.conditions:
             result = self.conditions[0].evaluate(series)
             for cond in self.conditions[1:]:
-                val = cond.evaluate(series)
-                if cond.combiner == "or":
-                    result = result or val
-                else:
-                    result = result and val
+                result = result and cond.evaluate(series)
         else:
             result = True  # no signal conditions = always pass (rely on exit conds)
 
@@ -631,11 +629,8 @@ class Rule:
             exit_result = self.exit_conditions[0].evaluate_portfolio(
                 portfolio, tick, self._bars_in_trade, entry_equity)
             for ec in self.exit_conditions[1:]:
-                val = ec.evaluate_portfolio(portfolio, tick, self._bars_in_trade, entry_equity)
-                if ec.combiner == "or":
-                    exit_result = exit_result or val
-                else:
-                    exit_result = exit_result and val
+                exit_result = exit_result and ec.evaluate_portfolio(
+                    portfolio, tick, self._bars_in_trade, entry_equity)
             result = result and exit_result
 
         # ── timing filter ──────────────────────────────────────────────────

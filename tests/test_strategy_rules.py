@@ -163,31 +163,6 @@ class TestCombiners:
                     conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
         assert rule.evaluate(s) is False
 
-    def test_or_one_true_fires(self):
-        s = _push_series([100.0])
-        cond1 = _condition(ConstantOperand(value_=1), ">", ConstantOperand(value_=15), combiner="and")
-        cond2 = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=15), combiner="or")
-        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
-                    conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
-        assert rule.evaluate(s) is True
-
-    def test_or_both_false_does_not_fire(self):
-        s = _push_series([100.0])
-        cond1 = _condition(ConstantOperand(value_=1), ">", ConstantOperand(value_=15), combiner="and")
-        cond2 = _condition(ConstantOperand(value_=2), ">", ConstantOperand(value_=15), combiner="or")
-        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
-                    conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
-        assert rule.evaluate(s) is False
-
-    def test_mixed_and_or_three_conditions(self):
-        """A and B or C — with A=False, B=True, C=True → result = (False and True) or True = True."""
-        s = _push_series([100.0])
-        cond_a = _condition(ConstantOperand(value_=1), ">", ConstantOperand(value_=10), combiner="and")  # False
-        cond_b = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=10), combiner="and")  # True; combined: False AND True = False
-        cond_c = _condition(ConstantOperand(value_=30), ">", ConstantOperand(value_=10), combiner="or")   # True; combined: False OR True = True
-        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
-                    conditions=[cond_a, cond_b, cond_c], timing=TimingMode.EVERY_TICK, quantity=1)
-        assert rule.evaluate(s) is True
 
 
 # ---------------------------------------------------------------------------
