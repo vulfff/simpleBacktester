@@ -38,7 +38,7 @@ class StrategySchema:
 
     # Available operand types
     OPERAND_TYPES = [
-        "price",          # Current price (bid, ask, mid, high, low, volume)
+        "price",          # Current price (close, high, low, volume)
         "lookback",       # Price N bars ago
         "sma",            # Simple moving average
         "ema",            # Exponential moving average
@@ -49,6 +49,7 @@ class StrategySchema:
         "lowest_low",     # Rolling min of a field over N bars (field, period)
         "atr",            # Average True Range (period)
         "typical_price",  # (High + Low + Close) / 3, no params
+        "time_of_day",    # Current bar time as minutes since midnight (0-1439)
         "constant"        # Fixed number
     ]
 
@@ -97,13 +98,25 @@ SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowled
 ### Price Operands
 - `price`: Current price (fields: close, high, low, volume)
 - `constant`: Fixed number values
-- `lookback`: Price or field value from N bars ago
-- `sma`: Simple moving average (configurable period)
-- `ema`: Exponential moving average (configurable period)
-- `rsi`: Relative strength index 0-100 (configurable period, default 14)
-- `macd`: MACD indicator (configurable fast/slow/signal periods)
-- `bollinger`: Bollinger bands (configurable period, std_dev, components: upper/middle/lower)
-- `time_of_day`: Current bar time as minutes since midnight (0–1439). Compare to a constant: {"type":"constant","value":570} = 09:30, {"type":"constant","value":585} = 09:45, {"type":"constant","value":960} = 16:00
+- `lookback`: Price or field value from N bars ago (field, period)
+- `sma`: Simple moving average (field, period)
+- `ema`: Exponential moving average (field, period)
+- `rsi`: Relative strength index 0-100 (field, period, default 14)
+- `macd`: MACD indicator (fast/slow/signal periods, component: macd/signal/hist)
+- `bollinger`: Bollinger bands (field, period, std_dev, component: upper/middle/lower/width/pct_b)
+- `highest_high`: Rolling maximum of a field over N bars (field, period) — for breakouts, Donchian channels
+- `lowest_low`: Rolling minimum of a field over N bars (field, period) — for breakouts, Donchian channels
+- `atr`: Average True Range (period only, no field) — volatility in price units
+- `typical_price`: (High + Low + Close) / 3, no parameters
+- `time_of_day`: Current bar time as minutes since midnight (0–1439). Use as the LEFT operand in a signal condition, compared to a `constant` on the RIGHT. This is the ONLY way to filter by time of day in a signal condition — do NOT compare price to time, and do NOT invent other time constructs.
+  - 09:30 = 570 minutes, 10:00 = 600, 12:00 = 720, 16:00 = 960
+  - JSON: `{"type": "time_of_day"}` (no parameters)
+  - Example: only allow entries between 9:30 and 16:00:
+    ```json
+    {"kind":"signal","left":{"type":"time_of_day"},"operator":">=","right":{"type":"constant","value":570},"combiner":"and"},
+    {"kind":"signal","left":{"type":"time_of_day"},"operator":"<","right":{"type":"constant","value":960},"combiner":"and"}
+    ```
+  - ⚠️ There is NO `day_of_week` signal operand. To restrict by weekday, use an `exit_condition` with `exitType: "day_of_week"` on the relevant rule.
 - `custom`: A user-defined custom indicator by name.
   Basic use: `{"type": "custom", "name": "IndicatorName"}`
   With parameter overrides: `{"type": "custom", "name": "IndicatorName", "overrides": {"path": value, ...}}`
@@ -114,8 +127,8 @@ SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowled
 
 ### Operators
 - `>`, `<`, `>=`, `<=`, `==`, `!=`: For numeric comparisons
-- `cross_above`: When left operand crosses above right (for moving average crossovers)
-- `cross_below`: When left operand crosses below right (for moving average crossovers)
+- `cross_above`: When left was ≤ right on previous bar and left > right on current bar. Works with any two operands — MA crossovers, price crossing a level, RSI crossing a threshold, etc.
+- `cross_below`: When left was ≥ right on previous bar and left < right on current bar.
 
 ### Rule Roles
 - `entry_long`: Buy signal (long position entry)
@@ -130,11 +143,11 @@ Exit conditions are placed in the conditions array with `kind: "exit_condition"`
 - `take_profit_abs`: Exit when absolute profit reaches $X
 - `stop_loss_abs`: Exit when absolute loss reaches $X
 - `bars_held`: Exit after holding for N bars/candles
-- `time_of_day`: Exit at specific hour (0-23)
-- `day_of_week`: Exit on specific day (ISO weekday: 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday)
+- `time_of_day`: Exit at a specific time of day. Value is minutes since midnight (0–1439), same unit as the signal operand. e.g. value 960 = 16:00 (4pm), value 570 = 09:30.
+- `day_of_week`: Exit on specific day (value = ISO weekday: 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday). This is also the ONLY way to filter by weekday — there is no day_of_week signal operand.
 
 ### Price Fields
-bid, ask, mid, volume
+close, high, low, volume
 
 ## JSON Structure
 
@@ -153,13 +166,13 @@ bid, ask, mid, volume
           "left": { "type": "operand_type", ...operand_params },
           "operator": "comparison_operator",
           "right": { "type": "operand_type", ...operand_params },
-          "combiner": "and|or"
+          "combiner": "and"
         },
         {
           "kind": "exit_condition",
           "exitType": "take_profit_pct|stop_loss_pct|bars_held|...",
           "value": numeric_value,
-          "combiner": "and|or"
+          "combiner": "and"
         }
       ]
     }
@@ -179,11 +192,6 @@ bid, ask, mid, volume
 { "type": "price", "field": "close" }
 ```
 
-**Price from N bars ago:**
-```json
-{ "type": "lookback", "field": "close", "period": 5 }
-```
-
 **Simple Moving Average:**
 ```json
 { "type": "sma", "field": "close", "period": 20 }
@@ -199,15 +207,45 @@ bid, ask, mid, volume
 { "type": "rsi", "field": "close", "period": 14 }
 ```
 
-**MACD (all three lines must match):**
+**MACD:**
 ```json
-{ "type": "macd", "fast": 12, "slow": 26, "signal": 9, "component": "macd|signal|histogram" }
+{ "type": "macd", "fast": 12, "slow": 26, "signal": 9, "component": "macd" }
 ```
+MACD components: `"macd"` (MACD line), `"signal"` (signal line), `"hist"` (histogram = macd - signal). ⚠️ The histogram component is `"hist"`, NOT `"histogram"`.
 
 **Bollinger Bands:**
 ```json
-{ "type": "bollinger", "field": "close", "period": 20, "std_dev": 2, "component": "upper|middle|lower" }
+{ "type": "bollinger", "field": "close", "period": 20, "std_dev": 2, "component": "upper" }
 ```
+Bollinger components: `"upper"`, `"middle"` (SMA), `"lower"`, `"width"` (upper - lower), `"pct_b"` (% position within band, 0–1).
+
+**Price from N bars ago:**
+```json
+{ "type": "lookback", "field": "close", "period": 5 }
+```
+
+**Highest High (rolling max over N bars):**
+```json
+{ "type": "highest_high", "field": "high", "period": 14 }
+```
+
+**Lowest Low (rolling min over N bars):**
+```json
+{ "type": "lowest_low", "field": "low", "period": 14 }
+```
+Use `highest_high` and `lowest_low` for Donchian channels, breakouts, support/resistance.
+
+**ATR (Average True Range):**
+```json
+{ "type": "atr", "period": 14 }
+```
+No `field` parameter. Returns volatility in price units. Use for dynamic stop distances.
+
+**Typical Price ((High + Low + Close) / 3):**
+```json
+{ "type": "typical_price" }
+```
+No parameters. Useful for CCI and as a fair-value price basis.
 
 ## Common Pattern Examples
 
@@ -293,7 +331,69 @@ Exit: Sell when RSI rises above 70 (overbought) OR after 10 bars
           "kind": "exit_condition",
           "exitType": "bars_held",
           "value": 10,
-          "combiner": "or"
+          "combiner": "and"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Time-Filtered RSI Strategy (trade only during market hours)
+Entry: Buy when RSI < 30 AND time is between 09:30 and 16:00
+Exit: Sell when RSI > 70 OR after 10 bars
+
+```json
+{
+  "name": "RSI Market Hours",
+  "rules": [
+    {
+      "name": "Buy RSI Oversold (Market Hours Only)",
+      "role": "entry_long",
+      "timing": "on_change",
+      "quantity": 1.0,
+      "conditions": [
+        {
+          "kind": "signal",
+          "left": { "type": "rsi", "field": "close", "period": 14 },
+          "operator": "<",
+          "right": { "type": "constant", "value": 30 },
+          "combiner": "and"
+        },
+        {
+          "kind": "signal",
+          "left": { "type": "time_of_day" },
+          "operator": ">=",
+          "right": { "type": "constant", "value": 570 },
+          "combiner": "and"
+        },
+        {
+          "kind": "signal",
+          "left": { "type": "time_of_day" },
+          "operator": "<",
+          "right": { "type": "constant", "value": 960 },
+          "combiner": "and"
+        }
+      ]
+    },
+    {
+      "name": "Sell RSI Overbought",
+      "role": "exit_long",
+      "timing": "on_change",
+      "quantity": 1.0,
+      "conditions": [
+        {
+          "kind": "signal",
+          "left": { "type": "rsi", "field": "close", "period": 14 },
+          "operator": ">",
+          "right": { "type": "constant", "value": 70 },
+          "combiner": "and"
+        },
+        {
+          "kind": "exit_condition",
+          "exitType": "bars_held",
+          "value": 10,
+          "combiner": "and"
         }
       ]
     }
@@ -317,12 +417,11 @@ If the user has a custom indicator "RSI Oversold" (default: RSI period 14, thres
 
 1. **Every entry rule should have a corresponding exit rule** (entry_long needs exit_long, entry_short needs exit_short)
 2. **All conditions array is valid** - the first condition is always the primary signal
-3. **Use combiner: "and"** between most conditions (both must be true)
-4. **Use combiner: "or"** when providing alternative exit conditions
-5. **Period values should be realistic**: SMA/EMA typically 5-200, RSI period 14, Bollinger period 20
-6. **Quantity should be positive float** (usually 1.0)
-7. **timing**: Use "on_change" for most indicators (triggers once when condition changes), "every_tick" runs every bar
-8. **Validate all JSON** - ensure it's properly formatted and contains no syntax errors
+3. **Always use combiner: "and"** between conditions (all conditions must be true)
+4. **Period values should be realistic**: SMA/EMA typically 5-200, RSI period 14, Bollinger period 20
+5. **Quantity should be positive float** (usually 1.0)
+6. **timing**: Use "on_change" for most indicators (triggers once when condition changes), "every_tick" runs every bar
+7. **Validate all JSON** - ensure it's properly formatted and contains no syntax errors
 
 ## Your Task
 1. Analyze the user's natural language description
