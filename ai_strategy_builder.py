@@ -91,6 +91,168 @@ class StrategySchema:
     TIMING_MODES = ["every_tick", "on_change"]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# DSL Parser Utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+_EXIT_CONDITION_KEYS = {
+    "stop_loss_pct", "take_profit_pct", "stop_loss_abs", "take_profit_abs",
+    "bars_held", "time_of_day", "day_of_week",
+}
+
+_TIMING_VALUES = {"on_change", "every_tick"}
+
+_OPERATORS = ["cross_above", "cross_below", ">=", "<=", "!=", "==", ">", "<"]
+
+_ROLE_LABELS = {
+    "entry_long":  "Entry Long",
+    "exit_long":   "Exit Long",
+    "entry_short": "Entry Short",
+    "exit_short":  "Exit Short",
+}
+
+
+def _split_by_comma_respecting_quotes(s: str) -> list:
+    """Split by comma but not inside quoted strings or parentheses."""
+    items: list = []
+    depth = 0
+    in_quote = False
+    quote_char = ""
+    current: list = []
+    for ch in s:
+        if in_quote:
+            current.append(ch)
+            if ch == quote_char:
+                in_quote = False
+        elif ch in ('"', "'"):
+            in_quote = True
+            quote_char = ch
+            current.append(ch)
+        elif ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            token = "".join(current).strip()
+            if token:
+                items.append(token)
+            current = []
+        else:
+            current.append(ch)
+    token = "".join(current).strip()
+    if token:
+        items.append(token)
+    return items
+
+
+def _parse_operand(token: str) -> dict:
+    """Parse a DSL operand token into a strategy JSON operand dict."""
+    token = token.strip()
+
+    # Bare number → constant
+    try:
+        val = float(token)
+        return {"type": "constant", "value": val}
+    except ValueError:
+        pass
+
+    # Function call: name(args...)
+    m = re.match(r"^(\w+)\((.*)\)$", token, re.DOTALL)
+    if not m:
+        raise ValueError(f"Cannot parse operand: {token!r}")
+
+    func = m.group(1).lower()
+    args_str = m.group(2).strip()
+
+    if func == "custom":
+        name_m = re.match(r'^["\']([^"\']+)["\'](.*)$', args_str)
+        if not name_m:
+            raise ValueError(f"custom() requires a quoted indicator name: {token!r}")
+        name = name_m.group(1)
+        rest = name_m.group(2).strip().lstrip(",").strip()
+        overrides: dict = {}
+        if rest:
+            for kv in rest.split(","):
+                kv = kv.strip()
+                if "=" in kv:
+                    k, v = kv.split("=", 1)
+                    try:
+                        overrides[k.strip()] = float(v.strip())
+                    except ValueError:
+                        overrides[k.strip()] = v.strip()
+        result: dict = {"type": "custom", "name": name}
+        if overrides:
+            result["overrides"] = overrides
+        return result
+
+    args = [a.strip() for a in args_str.split(",") if a.strip()]
+
+    if func in ("sma", "ema", "highest_high", "lowest_low"):
+        if len(args) != 2:
+            raise ValueError(f"{func}() requires (field, period): {token!r}")
+        return {"type": func, "field": args[0], "period": int(args[1])}
+
+    if func == "lookback":
+        if len(args) != 2:
+            raise ValueError(f"lookback() requires (field, period): {token!r}")
+        return {"type": "lookback", "field": args[0], "period": int(args[1])}
+
+    if func == "rsi":
+        if len(args) == 1:
+            return {"type": "rsi", "field": "close", "period": int(args[0])}
+        if len(args) == 2:
+            return {"type": "rsi", "field": args[0], "period": int(args[1])}
+        raise ValueError(f"rsi() requires 1 or 2 args: {token!r}")
+
+    if func == "macd":
+        if len(args) != 4:
+            raise ValueError(f"macd() requires (fast, slow, signal, component): {token!r}")
+        return {"type": "macd", "fast": int(args[0]), "slow": int(args[1]),
+                "signal": int(args[2]), "component": args[3]}
+
+    if func == "bollinger":
+        if len(args) != 4:
+            raise ValueError(f"bollinger() requires (field, period, stddev, component): {token!r}")
+        return {"type": "bollinger", "field": args[0], "period": int(args[1]),
+                "std_dev": float(args[2]), "component": args[3]}
+
+    if func == "atr":
+        if len(args) != 1:
+            raise ValueError(f"atr() requires (period): {token!r}")
+        return {"type": "atr", "period": int(args[0])}
+
+    if func == "typical_price":
+        return {"type": "typical_price"}
+
+    if func == "price":
+        if len(args) != 1:
+            raise ValueError(f"price() requires (field): {token!r}")
+        return {"type": "price", "field": args[0]}
+
+    if func == "time_of_day":
+        return {"type": "time_of_day"}
+
+    if func == "constant":
+        if len(args) != 1:
+            raise ValueError(f"constant() requires (value): {token!r}")
+        return {"type": "constant", "value": float(args[0])}
+
+    raise ValueError(f"Unknown operand type: {func!r}")
+
+
+def _split_condition(expr: str) -> tuple:
+    """Split 'LEFT OP RIGHT' into (left_token, op, right_token). Tries longest operators first."""
+    expr = expr.strip()
+    for op in _OPERATORS:
+        pattern = rf"^(.+?)\s+{re.escape(op)}\s+(.+)$"
+        m = re.match(pattern, expr)
+        if m:
+            return m.group(1).strip(), op, m.group(2).strip()
+    raise ValueError(f"No operator found in condition: {expr!r}")
+
+
 SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowledge of technical analysis and price action. Your task is to convert natural language trading strategy descriptions into valid JSON structures.
 
 ## Available Components
