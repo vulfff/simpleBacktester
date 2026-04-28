@@ -154,9 +154,13 @@ def _parse_operand(token: str) -> dict:
     # Bare number → constant
     try:
         val = float(token)
-        return {"type": "constant", "value": val}
     except ValueError:
         pass
+    else:
+        import math
+        if not math.isfinite(val):
+            raise ValueError(f"Non-finite constant not allowed: {token!r}")
+        return {"type": "constant", "value": val}
 
     # Function call: name(args...)
     m = re.match(r"^(\w+)\((.*)\)$", token, re.DOTALL)
@@ -174,7 +178,7 @@ def _parse_operand(token: str) -> dict:
         rest = name_m.group(2).strip().lstrip(",").strip()
         overrides: dict = {}
         if rest:
-            for kv in rest.split(","):
+            for kv in _split_by_comma_respecting_quotes(rest):
                 kv = kv.strip()
                 if "=" in kv:
                     k, v = kv.split("=", 1)
@@ -209,12 +213,18 @@ def _parse_operand(token: str) -> dict:
     if func == "macd":
         if len(args) != 4:
             raise ValueError(f"macd() requires (fast, slow, signal, component): {token!r}")
+        valid_components = {"macd", "signal", "hist"}
+        if args[3] not in valid_components:
+            raise ValueError(f"macd() component must be one of {sorted(valid_components)}: {token!r}")
         return {"type": "macd", "fast": int(args[0]), "slow": int(args[1]),
                 "signal": int(args[2]), "component": args[3]}
 
     if func == "bollinger":
         if len(args) != 4:
             raise ValueError(f"bollinger() requires (field, period, stddev, component): {token!r}")
+        valid_components = {"upper", "middle", "lower", "width", "pct_b"}
+        if args[3] not in valid_components:
+            raise ValueError(f"bollinger() component must be one of {sorted(valid_components)}: {token!r}")
         return {"type": "bollinger", "field": args[0], "period": int(args[1]),
                 "std_dev": float(args[2]), "component": args[3]}
 
@@ -224,6 +234,8 @@ def _parse_operand(token: str) -> dict:
         return {"type": "atr", "period": int(args[0])}
 
     if func == "typical_price":
+        if args_str.strip():
+            raise ValueError(f"typical_price() takes no arguments: {token!r}")
         return {"type": "typical_price"}
 
     if func == "price":
@@ -232,6 +244,8 @@ def _parse_operand(token: str) -> dict:
         return {"type": "price", "field": args[0]}
 
     if func == "time_of_day":
+        if args_str.strip():
+            raise ValueError(f"time_of_day() takes no arguments: {token!r}")
         return {"type": "time_of_day"}
 
     if func == "constant":
@@ -245,6 +259,8 @@ def _parse_operand(token: str) -> dict:
 def _split_condition(expr: str) -> tuple:
     """Split 'LEFT OP RIGHT' into (left_token, op, right_token). Tries longest operators first."""
     expr = expr.strip()
+    # Normalize spaces around symbolic operators so "rsi(14)>30" and "rsi(14) > 30" both work.
+    expr = re.sub(r"\s*([><=!]+)\s*", r" \1 ", expr).strip()
     for op in _OPERATORS:
         pattern = rf"^(.+?)\s+{re.escape(op)}\s+(.+)$"
         m = re.match(pattern, expr)
