@@ -29,15 +29,15 @@ INDICATOR_SYSTEM_PROMPT = """You are an expert technical analysis specialist. Yo
 ## Available Building Blocks
 
 ### Basic Operands (leaf nodes)
-- `price`: Current OHLCV price (fields: bid, ask, mid, high, low, volume)
+- `price`: Current OHLCV price (fields: close, high, low, volume)
 - `lookback`: Price from N bars ago (field, period)
-- `sma`: Simple moving average (fields: mid/bid/ask/high/low/volume, period)
-- `ema`: Exponential moving average (fields: mid/bid/ask/high/low/volume, period)
-- `rsi`: Relative strength index (fields: mid/bid/ask/high/low/volume, period)
+- `sma`: Simple moving average (fields: close/high/low/volume, period)
+- `ema`: Exponential moving average (fields: close/high/low/volume, period)
+- `rsi`: Relative strength index (fields: close/high/low/volume, period)
 - `macd`: MACD indicator (fast, slow, signal periods, component: macd/signal/hist)
 - `bollinger`: Bollinger bands (field, period, std_dev, component: upper/middle/lower/width/pct_b)
-- `highest_high`: Rolling maximum of a field over N bars (field: high/low/mid/…, period). Use for Donchian channels, Williams %R, Stochastics.
-- `lowest_low`: Rolling minimum of a field over N bars (field: high/low/mid/…, period). Use for Donchian channels, Williams %R, Stochastics.
+- `highest_high`: Rolling maximum of a field over N bars (field: high/low/close/…, period). Use for Donchian channels, Williams %R, Stochastics.
+- `lowest_low`: Rolling minimum of a field over N bars (field: high/low/close/…, period). Use for Donchian channels, Williams %R, Stochastics.
 - `atr`: Average True Range over N bars (period). TR = max(H-L, |H-prev_close|, |L-prev_close|). No field param.
 - `typical_price`: (High + Low + Close) / 3. No parameters. Useful as CCI price basis.
 

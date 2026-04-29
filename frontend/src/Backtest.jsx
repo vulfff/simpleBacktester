@@ -425,7 +425,7 @@ export default function Backtest({ goTo }) {
                   <div className="field-label" style={{ marginBottom:8 }}>{t('backtest.commissionOverride')}</div>
                   <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                     <select value={commMode} onChange={e => setCommMode(e.target.value)}
-                      style={{ maxWidth:160 }}>
+                      className="inp" style={{ maxWidth:160 }}>
                       <option value="none">{t('backtest.commNone')}</option>
                       <option value="pct">{t('backtest.commPct')}</option>
                       <option value="flat">{t('backtest.commFlat')}</option>
@@ -435,7 +435,7 @@ export default function Backtest({ goTo }) {
                         <input type="number" value={commValue} min="0" step="0.001"
                           onChange={e => setCommValue(e.target.value)}
                           placeholder={commMode==='pct' ? '0.1' : '1.00'}
-                          style={{ maxWidth:100 }} />
+                          className="inp" style={{ maxWidth:100 }} />
                         <span style={{ fontSize:'0.8rem', color:'var(--text-mute)' }}>
                           {commMode === 'pct' ? t('backtest.pctPerFill') : t('backtest.dollarPerFill')}
                         </span>

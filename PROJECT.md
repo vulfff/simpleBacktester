@@ -169,6 +169,7 @@ Custom indicator store and expression tree evaluator.
 | LowestLow(n) | n |
 | ATR(n) | n + 1 |
 | TypicalPrice | 1 |
+| TimeOfDay | 1 |
 
 ### `db.py`
 All SQLite access is centralised here. Never import `sqlite3` directly elsewhere.
@@ -291,7 +292,7 @@ Two modes (tab strip):
 Manual builder:
 - Rule roles: Entry Long / Exit Long / Entry Short / Exit Short (pill nav)
 - Each rule: name, role selector, timing (on_change / every_tick), quantity
-- Conditions: Signal conditions (price, SMA, EMA, RSI, MACD, Bollinger, Volume) or Exit conditions (T/P %, Stop-loss %, bars held, time of day, day of week)
+- Conditions: Signal conditions — all 13 operand types: `price`, `lookback`, `sma`, `ema`, `rsi`, `macd`, `bollinger`, `highest_high`, `lowest_low`, `atr`, `typical_price`, `time_of_day`, `constant`. Exit conditions: take-profit %, stop-loss %, bars held, time of day, day of week.
 - Condition picker is inline (not a dropdown) — expands below the add buttons within the rule card
 - AND/OR combiners between conditions
 - Load / Save to DB
@@ -301,7 +302,7 @@ Manual builder:
 
 ### `IndicatorBuilder.jsx`
 Expression tree editor for custom indicators. Supports:
-- `const`, `operand` (price/SMA/EMA/RSI/MACD/Bollinger), `binop` (+−×÷^%), `unop` (neg/abs/sqrt/log), `clamp`, `ifelse`
+- `const`, `operand` (price/lookback/sma/ema/rsi/macd/bollinger/highest_high/lowest_low/atr/typical_price), `binop` (+−×÷^%), `unop` (neg/abs/sqrt/log), `clamp`, `ifelse`
 - AI chat tab to generate expression trees from natural language
 
 **Parameter overridability**: all `const` node values and operand numeric params (`period`, `std_dev`, `fast`, `slow`, `signal`) stored in an indicator's expression tree are overridable per strategy use — no rebuild needed. The AI indicator builder is instructed to place tunable values in explicit `const` nodes and always include `period` params so they appear as override inputs in StrategyBuilder.
@@ -314,10 +315,10 @@ Multi-key manager. Two panels:
 - Each key shows: label, service, active indicator, "Use this" button (for inactive keys), delete
 
 **AI Models** (model → `model_api_keys` table):
-- Anthropic: `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`
-- OpenAI: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o`, `gpt-4o-mini`, `o3`, `o4-mini`
-- xAI: `grok-3`, `grok-3-mini`, `grok-2`
-- Google: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.0-flash`
+- Anthropic: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `claude-opus-4-6`, `claude-sonnet-4-5-20250929`
+- OpenAI: `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5`, `gpt-5-mini`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o`, `o4-mini`, `o3`, `o3-mini`
+- xAI: `grok-4`, `grok-4-1-fast-non-reasoning`, `grok-4-1-fast-reasoning`, `grok-3`, `grok-3-mini`
+- Google: `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`
 
 **Provider auto-detection from API key format:** `sk-ant-*` → Anthropic, `xai-*` → xAI, `AIza*` → Google, `sk-*` → OpenAI.
 
