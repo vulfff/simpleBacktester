@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-VERSION="1.0.2" """ Just change new version build here """
+VERSION="1.0.2"  # Just change new version build here
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
     print(f"$ {' '.join(cmd)}")
