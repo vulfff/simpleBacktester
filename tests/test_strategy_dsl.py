@@ -169,6 +169,7 @@ exit_long: rsi(14) > 70
     assert entry["conditions"][0]["right"] == {"type": "constant", "value": 30.0}
     assert entry["conditions"][1]["left"] == {"type": "sma", "field": "close", "period": 50}
     assert entry["conditions"][1]["operator"] == ">"
+    assert entry["conditions"][1]["right"] == {"type": "sma", "field": "close", "period": 200}
 
 
 def test_comma_creates_separate_rules():
@@ -283,3 +284,48 @@ exit_long: stop_loss_pct=2
     assert conds[1]["left"] == {"type": "time_of_day"}
     assert conds[1]["operator"] == ">="
     assert conds[1]["right"] == {"type": "constant", "value": 570.0}
+
+
+def test_and_in_custom_name_not_split():
+    dsl = """
+name: Custom And Test
+entry_long: custom("RSI and Vol") > 0
+exit_long: stop_loss_pct=2
+"""
+    result = parse_dsl_to_strategy(dsl)
+    left = result["rules"][0]["conditions"][0]["left"]
+    assert left == {"type": "custom", "name": "RSI and Vol"}
+
+
+def test_invalid_timing_raises():
+    dsl = "entry_long: rsi(14) < 30, timing=weekly\nexit_long: rsi(14) > 70"
+    with pytest.raises(ValueError, match="Invalid timing value"):
+        parse_dsl_to_strategy(dsl)
+
+
+def test_negative_exit_value_raises():
+    dsl = "entry_long: rsi(14) < 30\nexit_long: stop_loss_pct=-5"
+    with pytest.raises(ValueError, match="must be positive"):
+        parse_dsl_to_strategy(dsl)
+
+
+def test_non_numeric_exit_value_raises():
+    dsl = "entry_long: rsi(14) < 30\nexit_long: stop_loss_pct=big"
+    with pytest.raises(ValueError, match="must be numeric"):
+        parse_dsl_to_strategy(dsl)
+
+
+def test_unknown_lines_silently_ignored():
+    dsl = """
+name: Test
+some_garbage: this is ignored
+entry_long: rsi(14) < 30
+exit_long: rsi(14) > 70
+"""
+    result = parse_dsl_to_strategy(dsl)
+    assert len(result["rules"]) == 2
+
+
+def test_empty_dsl_produces_empty_rules():
+    result = parse_dsl_to_strategy("")
+    assert result == {"name": "AI Strategy", "rules": []}

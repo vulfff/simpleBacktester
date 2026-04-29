@@ -269,6 +269,53 @@ def _split_condition(expr: str) -> tuple:
     raise ValueError(f"No operator found in condition: {expr!r}")
 
 
+def _split_by_and_respecting_quotes(s: str) -> list:
+    """Split by ' and ' (case-insensitive) but not inside quoted strings or parentheses."""
+    parts: list = []
+    depth = 0
+    in_quote = False
+    quote_char = ""
+    current: list = []
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if in_quote:
+            current.append(ch)
+            if ch == quote_char:
+                in_quote = False
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            in_quote = True
+            quote_char = ch
+            current.append(ch)
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+            i += 1
+            continue
+        if ch == ")":
+            depth -= 1
+            current.append(ch)
+            i += 1
+            continue
+        if depth == 0 and s[i:i+5].lower() == " and " and not in_quote:
+            token = "".join(current).strip()
+            if token:
+                parts.append(token)
+            current = []
+            i += 5
+            continue
+        current.append(ch)
+        i += 1
+    token = "".join(current).strip()
+    if token:
+        parts.append(token)
+    return parts
+
+
 def parse_dsl_to_strategy(text: str) -> dict:
     """
     Parse compact DSL text into a full strategy JSON dict.
@@ -310,8 +357,11 @@ def parse_dsl_to_strategy(text: str) -> dict:
             # Timing override
             if item.lower().startswith("timing="):
                 val = item.split("=", 1)[1].strip().lower()
-                if val in _TIMING_VALUES:
-                    timing = val
+                if val not in _TIMING_VALUES:
+                    raise ValueError(
+                        f"Invalid timing value {val!r}. Must be one of: {sorted(_TIMING_VALUES)}"
+                    )
+                timing = val
                 continue
             # Exit condition (key=value with known key)
             kv = re.match(r"^(\w+)=(.+)$", item)
@@ -327,7 +377,7 @@ def parse_dsl_to_strategy(text: str) -> dict:
             role_counters[role] = role_counters.get(role, 0) + 1
             n = role_counters[role]
             conditions: list = []
-            for cond_expr in re.split(r"\s+and\s+", sig_expr, flags=re.IGNORECASE):
+            for cond_expr in _split_by_and_respecting_quotes(sig_expr):
                 left_tok, op, right_tok = _split_condition(cond_expr.strip())
                 conditions.append({
                     "kind": "signal",
@@ -352,6 +402,10 @@ def parse_dsl_to_strategy(text: str) -> dict:
             except ValueError:
                 raise ValueError(
                     f"Exit condition value must be numeric: {exit_key}={exit_val_str!r}"
+                )
+            if exit_val <= 0 and exit_key not in ("time_of_day", "day_of_week"):
+                raise ValueError(
+                    f"Exit condition value must be positive: {exit_key}={exit_val_str!r}"
                 )
             rules.append({
                 "name": f"{label} {n}",
