@@ -118,7 +118,7 @@ def post_linux() -> None:
         "Description: Algorithmic trading backtester (desktop)\n"
     )
     if shutil.which("dpkg-deb"):
-        run(["dpkg-deb", "--build", str(deb_root), str(release / "backtester_" + VERSION + "_amd64.deb")])
+        run(["dpkg-deb", "--build", str(deb_root), str(release / f"backtester_{VERSION}_amd64.deb")])
     else:
         print("skip: dpkg-deb missing - .deb not built")
 
