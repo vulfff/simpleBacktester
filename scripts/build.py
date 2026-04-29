@@ -38,7 +38,7 @@ def build_pyinstaller() -> None:
 def post_windows() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
-    zip_path = release / "backtester-" + VERSION + "-windows-x64.zip"
+    zip_path = release / f"backtester-{VERSION}-windows-x64.zip"
     shutil.make_archive(str(zip_path.with_suffix("")), "zip", ROOT / "dist", "Backtester")
     nsi = ROOT / "scripts" / "backtester.nsi"
     if shutil.which("makensis") and nsi.exists():
@@ -65,7 +65,7 @@ def post_macos() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
     app_bundle = ROOT / "dist" / "Backtester.app"
-    dmg = release / "Backtester-" + VERSION + ".dmg"
+    dmg = release / f"Backtester-{VERSION}.dmg"
     if dmg.exists():
         dmg.unlink()
     if not app_bundle.exists():
@@ -95,7 +95,7 @@ def post_linux() -> None:
     apprun.write_text("#!/bin/sh\nexec \"$(dirname \"$0\")/usr/bin/Backtester\" \"$@\"\n")
     apprun.chmod(0o755)
     if shutil.which("appimagetool"):
-        run(["appimagetool", str(appdir), str(release / "Backtester-" + VERSION + "-x86_64.AppImage")])
+        run(["appimagetool", str(appdir), str(release / f"Backtester-{VERSION}-x86_64.AppImage")])
     else:
         print("skip: appimagetool missing - AppImage not built")
 
