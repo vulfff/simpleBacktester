@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+VERSION="1.0.2" """ Just change new version build here """
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
     print(f"$ {' '.join(cmd)}")
@@ -37,11 +38,11 @@ def build_pyinstaller() -> None:
 def post_windows() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
-    zip_path = release / "backtester-1.0.0-windows-x64.zip"
+    zip_path = release / "backtester-" + VERSION + "-windows-x64.zip"
     shutil.make_archive(str(zip_path.with_suffix("")), "zip", ROOT / "dist", "Backtester")
     nsi = ROOT / "scripts" / "backtester.nsi"
     if shutil.which("makensis") and nsi.exists():
-        run(["makensis", str(nsi)], cwd=ROOT)
+        run(["makensis", f"/DVERSION={VERSION}", str(nsi)], cwd=ROOT)
     else:
         print("skip: makensis or backtester.nsi missing — installer not built")
 
@@ -64,7 +65,7 @@ def post_macos() -> None:
     release = ROOT / "dist" / "release"
     release.mkdir(parents=True, exist_ok=True)
     app_bundle = ROOT / "dist" / "Backtester.app"
-    dmg = release / "Backtester-1.0.0.dmg"
+    dmg = release / "Backtester-" + VERSION + ".dmg"
     if dmg.exists():
         dmg.unlink()
     if not app_bundle.exists():
@@ -94,7 +95,7 @@ def post_linux() -> None:
     apprun.write_text("#!/bin/sh\nexec \"$(dirname \"$0\")/usr/bin/Backtester\" \"$@\"\n")
     apprun.chmod(0o755)
     if shutil.which("appimagetool"):
-        run(["appimagetool", str(appdir), str(release / "Backtester-1.0.0-x86_64.AppImage")])
+        run(["appimagetool", str(appdir), str(release / "Backtester-" + VERSION + "-x86_64.AppImage")])
     else:
         print("skip: appimagetool missing - AppImage not built")
 
@@ -109,7 +110,7 @@ def post_linux() -> None:
     shutil.copy(ROOT / "scripts" / "backtester.desktop", deb_root / "usr" / "share" / "applications" / "backtester.desktop")
     (deb_root / "DEBIAN" / "control").write_text(
         "Package: backtester\n"
-        "Version: 1.0.0\n"
+        "Version: " + VERSION\n"
         "Section: misc\n"
         "Priority: optional\n"
         "Architecture: amd64\n"
@@ -117,7 +118,7 @@ def post_linux() -> None:
         "Description: Algorithmic trading backtester (desktop)\n"
     )
     if shutil.which("dpkg-deb"):
-        run(["dpkg-deb", "--build", str(deb_root), str(release / "backtester_1.0.0_amd64.deb")])
+        run(["dpkg-deb", "--build", str(deb_root), str(release / "backtester_" + VERSION + "_amd64.deb")])
     else:
         print("skip: dpkg-deb missing - .deb not built")
 

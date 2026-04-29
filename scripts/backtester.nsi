@@ -1,6 +1,6 @@
 ; Backtester — NSIS installer
 !define APPNAME "Backtester"
-!define VERSION "1.0.0"
+; VERSION is now passed via /DVERSION= from build.py
 !define INSTALL_DIR "$PROGRAMFILES64\${APPNAME}"
 
 OutFile "..\dist\release\backtester-${VERSION}-windows-x64.exe"

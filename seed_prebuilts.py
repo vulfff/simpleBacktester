@@ -22,8 +22,8 @@ create_tables()
 def cond(left, op, right, combiner="and"):
     return {"left": left, "operator": op, "right": right, "combiner": combiner}
 
-def exit_cond(exit_type, value, combiner="and"):
-    return {"kind": "exit_condition", "exitType": exit_type, "value": value, "combiner": combiner}
+def exit_cond(exit_type, value):
+    return {"kind": "exit_condition", "exitType": exit_type, "value": value}
 
 def price(field="close"):
     return {"type": "price", "field": field}
@@ -128,13 +128,21 @@ STRATEGIES = [
                 [cond(rsi(14), "<", const(30))],
             ),
             rule(
-                "Sell when RSI is overbought (> 70) or stop-loss hit",
+                "Sell when RSI is overbought (> 70)",
                 "exit_long",
-                [
-                    cond(rsi(14), ">", const(70)),
-                    exit_cond("stop_loss_pct",  5.0, combiner="or"),
-                    exit_cond("take_profit_pct", 8.0, combiner="or"),
-                ],
+                [cond(rsi(14), ">", const(70))],
+                timing="every_tick",
+            ),
+            rule(
+                "Stop loss at 5%",
+                "exit_long",
+                [exit_cond("stop_loss_pct", 5.0)],
+                timing="every_tick",
+            ),
+            rule(
+                "Take profit at 8%",
+                "exit_long",
+                [exit_cond("take_profit_pct", 8.0)],
                 timing="every_tick",
             ),
         ]),
@@ -179,13 +187,21 @@ STRATEGIES = [
                 [cond(price(), "cross_below", boll("lower", 20, 2.0))],
             ),
             rule(
-                "Sell when price recovers to Middle Band or stop-loss",
+                "Sell when price recovers to Middle Band",
                 "exit_long",
-                [
-                    cond(price(), "cross_above", boll("middle", 20, 2.0)),
-                    exit_cond("stop_loss_pct",   3.0, combiner="or"),
-                    exit_cond("take_profit_pct", 6.0, combiner="or"),
-                ],
+                [cond(price(), "cross_above", boll("middle", 20, 2.0))],
+                timing="every_tick",
+            ),
+            rule(
+                "Stop loss at 3%",
+                "exit_long",
+                [exit_cond("stop_loss_pct", 3.0)],
+                timing="every_tick",
+            ),
+            rule(
+                "Take profit at 6%",
+                "exit_long",
+                [exit_cond("take_profit_pct", 6.0)],
                 timing="every_tick",
             ),
         ]),
@@ -207,12 +223,15 @@ STRATEGIES = [
                 [cond(price(), "cross_above", ema(21))],
             ),
             rule(
-                "Sell when price crosses below 21-EMA or stop-loss",
+                "Sell when price crosses below 21-EMA",
                 "exit_long",
-                [
-                    cond(price(), "cross_below", ema(21)),
-                    exit_cond("stop_loss_pct", 3.0, combiner="or"),
-                ],
+                [cond(price(), "cross_below", ema(21))],
+                timing="every_tick",
+            ),
+            rule(
+                "Stop loss at 3%",
+                "exit_long",
+                [exit_cond("stop_loss_pct", 3.0)],
                 timing="every_tick",
             ),
         ]),
@@ -480,13 +499,15 @@ def seed():
     for s in STRATEGIES:
         cur.execute("SELECT id FROM strategies WHERE name = ?", (s["name"],))
         row = cur.fetchone()
-        if row:
-            # Ensure is_builtin flag is set on existing rows
-            cur.execute("UPDATE strategies SET is_builtin = 1 WHERE id = ?", (row["id"],))
-            s_skipped += 1
-            continue
         config = s["config"]
         config_str = json.dumps({"rule_set": config}) if "rules" in config else json.dumps(config)
+        if row:
+            cur.execute(
+                "UPDATE strategies SET config = ?, is_builtin = 1 WHERE id = ?",
+                (config_str, row["id"]),
+            )
+            s_skipped += 1
+            continue
         cur.execute(
             "INSERT INTO strategies (name, logic, config, is_builtin) VALUES (?, ?, ?, 1)",
             (s["name"], s["logic"], config_str),

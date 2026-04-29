@@ -435,8 +435,25 @@ exit_short: ...
 
 Rules:
 - Always provide a matching exit for every entry (entry_long needs exit_long, entry_short needs exit_short)
-- Comma (,) = separate alternative rule for the same role (OR — any one triggers the signal)
-- `and` keyword = multiple conditions within one rule (ALL must be true)
+
+## `and` vs Comma — most important rule
+
+**`and`** combines conditions into ONE rule. ALL joined conditions must be true at the same time.
+    entry_long: rsi(14) < 30 and price(close) > sma(close,200)
+    → buys only when BOTH: RSI is oversold AND price is above the 200 SMA simultaneously
+
+**Comma `,`** between signal expressions creates SEPARATE, independent rules for the same role.
+Each separate rule fires on its own — whichever triggers first.
+    entry_long: rsi(14) < 30, price(close) cross_above sma(close,200)
+    → two independent entry rules: fires when EITHER RSI drops below 30 OR price crosses above 200 SMA
+
+You can mix both:
+    entry_long: rsi(14) < 30 and price(close) > sma(close,200), macd(12,26,9,macd) cross_above 0
+    → fires when (RSI<30 AND above SMA) OR when MACD crosses above zero — two separate rules
+
+Comma also separates exit_key=value items and timing — these are always independent additions:
+    exit_long: rsi(14) > 70, stop_loss_pct=3, bars_held=20
+    → three independent exit triggers: RSI signal rule, stop-loss rule, max-bars rule
 
 ## Operands
 
