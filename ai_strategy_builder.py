@@ -269,6 +269,106 @@ def _split_condition(expr: str) -> tuple:
     raise ValueError(f"No operator found in condition: {expr!r}")
 
 
+def parse_dsl_to_strategy(text: str) -> dict:
+    """
+    Parse compact DSL text into a full strategy JSON dict.
+
+    DSL format (one line per role):
+        name: Strategy Name
+        entry_long: sma(close,50) cross_above sma(close,200), timing=every_tick
+        exit_long: rsi(14) > 70, stop_loss_pct=3, bars_held=20
+    """
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+
+    name = "AI Strategy"
+    role_lines: list = []
+
+    for line in lines:
+        lower = line.lower()
+        if lower.startswith("name:"):
+            name = line[5:].strip()
+        else:
+            for role in _ROLE_LABELS:
+                if lower.startswith(role + ":"):
+                    rest = line[len(role) + 1:].strip()
+                    role_lines.append((role, rest))
+                    break
+
+    rules: list = []
+    role_counters: dict = {}
+
+    for role, rest in role_lines:
+        items = _split_by_comma_respecting_quotes(rest)
+        timing = "on_change"
+        signal_items: list = []
+        exit_items: list = []
+
+        for item in items:
+            item = item.strip()
+            if not item:
+                continue
+            # Timing override
+            if item.lower().startswith("timing="):
+                val = item.split("=", 1)[1].strip().lower()
+                if val in _TIMING_VALUES:
+                    timing = val
+                continue
+            # Exit condition (key=value with known key)
+            kv = re.match(r"^(\w+)=(.+)$", item)
+            if kv and kv.group(1) in _EXIT_CONDITION_KEYS:
+                exit_items.append((kv.group(1), kv.group(2).strip()))
+                continue
+            # Signal expression
+            signal_items.append(item)
+
+        label = _ROLE_LABELS[role]
+
+        for sig_expr in signal_items:
+            role_counters[role] = role_counters.get(role, 0) + 1
+            n = role_counters[role]
+            conditions: list = []
+            for cond_expr in re.split(r"\s+and\s+", sig_expr, flags=re.IGNORECASE):
+                left_tok, op, right_tok = _split_condition(cond_expr.strip())
+                conditions.append({
+                    "kind": "signal",
+                    "left": _parse_operand(left_tok),
+                    "operator": op,
+                    "right": _parse_operand(right_tok),
+                    "combiner": "and",
+                })
+            rules.append({
+                "name": f"{label} {n}",
+                "role": role,
+                "timing": timing,
+                "quantity": 1.0,
+                "conditions": conditions,
+            })
+
+        for exit_key, exit_val_str in exit_items:
+            role_counters[role] = role_counters.get(role, 0) + 1
+            n = role_counters[role]
+            try:
+                exit_val = float(exit_val_str)
+            except ValueError:
+                raise ValueError(
+                    f"Exit condition value must be numeric: {exit_key}={exit_val_str!r}"
+                )
+            rules.append({
+                "name": f"{label} {n}",
+                "role": role,
+                "timing": timing,
+                "quantity": 1.0,
+                "conditions": [{
+                    "kind": "exit_condition",
+                    "exitType": exit_key,
+                    "value": exit_val,
+                    "combiner": "and",
+                }],
+            })
+
+    return {"name": name, "rules": rules}
+
+
 SYSTEM_PROMPT = """You are an expert trading strategy designer with deep knowledge of technical analysis and price action. Your task is to convert natural language trading strategy descriptions into valid JSON structures.
 
 ## Available Components
