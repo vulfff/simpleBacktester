@@ -110,7 +110,7 @@ def post_linux() -> None:
     shutil.copy(ROOT / "scripts" / "backtester.desktop", deb_root / "usr" / "share" / "applications" / "backtester.desktop")
     (deb_root / "DEBIAN" / "control").write_text(
         "Package: backtester\n"
-        "Version: " + VERSION\n"
+        "Version: " + VERSION + "\n"
         "Section: misc\n"
         "Priority: optional\n"
         "Architecture: amd64\n"
