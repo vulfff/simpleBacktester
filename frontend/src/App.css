@@ -227,6 +227,11 @@ input.inp:focus, select.inp:focus {
 
 .field input::placeholder { color: var(--text-mute); }
 
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
 .field textarea {
   font-family: var(--mono); min-height: 110px; resize: vertical; line-height: 1.5;
 }
