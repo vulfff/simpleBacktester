@@ -189,6 +189,62 @@ const OPERATORS = [
   { value: 'cross_below', label: '↘ crosses below' },
 ];
 
+// ─── i18n category key map ────────────────────────────────────────────────────
+const _CAT_KEYS = {
+  'Price Conditions':  'sigCatPriceConditions',
+  'Moving Averages':   'sigCatMovingAverages',
+  'RSI':               'sigCatRSI',
+  'MACD':              'sigCatMACD',
+  'Bollinger Bands':   'sigCatBollingerBands',
+  'Volume':            'sigCatVolume',
+  'Time-Based Signals':'sigCatTimeBasedSignals',
+  'Profit & Loss':     'exitCatProfitLoss',
+  'Time-Based':        'exitCatTimeBased',
+};
+
+const getSignalBlocks = t => SIGNAL_BLOCKS.map(cat => ({
+  ...cat,
+  category: t(`strategy.${_CAT_KEYS[cat.category]}`, { defaultValue: cat.category }),
+  items: cat.items.map(item => ({
+    ...item,
+    label: t(`strategy.sigLabel_${item.id}`, { defaultValue: item.label }),
+    desc:  t(`strategy.sigDesc_${item.id}`,  { defaultValue: item.desc }),
+  })),
+}));
+
+const getExitBlocks = t => EXIT_BLOCKS.map(cat => ({
+  ...cat,
+  category: t(`strategy.${_CAT_KEYS[cat.category]}`, { defaultValue: cat.category }),
+  items: cat.items.map(item => ({
+    ...item,
+    label: t(`strategy.exitLabel_${item.id}`, { defaultValue: item.label }),
+    desc:  t(`strategy.exitDesc_${item.id}`,  { defaultValue: item.desc }),
+  })),
+}));
+
+const getRoles = t => [
+  { value: 'entry_long',  label: t('strategy.buyLong'),        color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)'  },
+  { value: 'exit_long',   label: t('strategy.sellLong'),       color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.4)' },
+  { value: 'entry_short', label: t('strategy.enterShort'),     color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  border: 'rgba(251,146,60,0.4)'  },
+  { value: 'exit_short',  label: t('strategy.exitShortLabel'), color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.4)' },
+];
+
+const getOperators = t => [
+  { value: '>',           label: t('strategy.opGt') },
+  { value: '>=',          label: t('strategy.opGte') },
+  { value: '<',           label: t('strategy.opLt') },
+  { value: '<=',          label: t('strategy.opLte') },
+  { value: '==',          label: t('strategy.opEq') },
+  { value: '!=',          label: t('strategy.opNeq') },
+  { value: 'cross_above', label: t('strategy.opCrossAbove') },
+  { value: 'cross_below', label: t('strategy.opCrossBelow') },
+];
+
+const getDow = t => [null,
+  t('strategy.dowMon'), t('strategy.dowTue'), t('strategy.dowWed'),
+  t('strategy.dowThu'), t('strategy.dowFri'), t('strategy.dowSat'), t('strategy.dowSun'),
+];
+
 let _uid = 1;
 const uid = () => String(_uid++);
 
@@ -257,7 +313,21 @@ const PRICE_FIELDS = ['close','high','low','volume'];
 function OperandEditor({ operand, onChange, label, isTimeSide }) {
   const { t } = useTranslation();
   const TYPES = ['price','lookback','sma','ema','rsi','macd','bollinger','highest_high','lowest_low','atr','typical_price','time_of_day','constant'];
-  const TYPE_LABELS = { price:'Current Price', lookback:'Price N bars ago', sma:'SMA', ema:'EMA (Fast Average)', rsi:'RSI (0-100)', macd:'MACD', bollinger:'Bollinger Band', highest_high:'Highest High', lowest_low:'Lowest Low', atr:'ATR', typical_price:'Typical Price', time_of_day:'Time of Day', constant:'Fixed Number' };
+  const TYPE_LABELS = {
+    price:         t('strategy.typePrice'),
+    lookback:      t('strategy.typeLookback'),
+    sma:           t('strategy.typeSma'),
+    ema:           t('strategy.typeEma'),
+    rsi:           t('strategy.typeRsi'),
+    macd:          t('strategy.typeMacd'),
+    bollinger:     t('strategy.typeBollinger'),
+    highest_high:  t('strategy.typeHighestHigh'),
+    lowest_low:    t('strategy.typeLowestLow'),
+    atr:           t('strategy.typeAtr'),
+    typical_price: t('strategy.typeTypicalPrice'),
+    time_of_day:   t('strategy.typeTimeOfDay'),
+    constant:      t('strategy.typeConstant'),
+  };
   const set = (k, v) => onChange({ ...operand, [k]: v });
   return (
     <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
@@ -317,22 +387,25 @@ function OperandEditor({ operand, onChange, label, isTimeSide }) {
 }
 
 function ExitConditionEditor({ cond, onChange }) {
+  const { t } = useTranslation();
   const meta = {
-    take_profit_pct:  { pre: 'Take profit at +', suf: '% profit',            min: 0.1, step: 0.1 },
-    stop_loss_pct:    { pre: 'Stop loss at -',   suf: '% loss',              min: 0.1, step: 0.1 },
-    take_profit_abs:  { pre: 'Take profit at +$', suf: ' profit',            min: 1,   step: 1 },
-    stop_loss_abs:    { pre: 'Stop loss at -$',   suf: ' loss',              min: 1,   step: 1 },
-    bars_held:        { pre: 'Exit after',        suf: ' bars in trade',     min: 1,   step: 1 },
-    time_of_day:      { pre: 'At hour',           suf: ':00 UTC  (0-23)',    min: 0,   step: 1, max: 23 },
-    day_of_week:      { pre: 'On',                suf: '',                   isDow: true },
+    take_profit_pct: { pre: t('strategy.exitMeta_take_profit_pct_pre'), suf: t('strategy.exitMeta_take_profit_pct_suf'), min: 0.1, step: 0.1 },
+    stop_loss_pct:   { pre: t('strategy.exitMeta_stop_loss_pct_pre'),   suf: t('strategy.exitMeta_stop_loss_pct_suf'),   min: 0.1, step: 0.1 },
+    take_profit_abs: { pre: t('strategy.exitMeta_take_profit_abs_pre'), suf: t('strategy.exitMeta_take_profit_abs_suf'), min: 1,   step: 1 },
+    stop_loss_abs:   { pre: t('strategy.exitMeta_stop_loss_abs_pre'),   suf: t('strategy.exitMeta_stop_loss_abs_suf'),   min: 1,   step: 1 },
+    bars_held:       { pre: t('strategy.exitMeta_bars_held_pre'),       suf: t('strategy.exitMeta_bars_held_suf'),       min: 1,   step: 1 },
+    time_of_day:     { pre: t('strategy.exitMeta_time_of_day_pre'),     suf: t('strategy.exitMeta_time_of_day_suf'),     min: 0,   step: 1, max: 23 },
+    day_of_week:     { pre: t('strategy.exitMeta_day_of_week_pre'),     suf: '',                                         isDow: true },
   }[cond.exitType] || { pre: 'Value:', suf: '', min: 0, step: 1 };
+
+  const dow = getDow(t);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{meta.pre}</span>
       {meta.isDow ? (
         <select value={cond.value} style={sStyle} onChange={e => onChange({ ...cond, value: parseInt(e.target.value) })}>
-          {DOW.map((d, i) => d && <option key={i} value={i}>{d}</option>)}
+          {dow.map((d, i) => d && <option key={i} value={i}>{d}</option>)}
         </select>
       ) : (
         <input type="number" value={cond.value} min={meta.min} max={meta.max} step={meta.step} style={{ ...iStyle, width: 90 }}
@@ -389,9 +462,14 @@ function CustomOperandPanel({ operand, onChange, customIndicators, label = 'Left
 function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIndicators }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const allItems = [...SIGNAL_BLOCKS, ...EXIT_BLOCKS].flatMap(c => c.items);
-  const template = allItems.find(i => i.id === cond.templateId);
-  const catColor = template ? [...SIGNAL_BLOCKS, ...EXIT_BLOCKS].find(c => c.items.some(i => i.id === cond.templateId))?.color : '#6b7280';
+  const signalBlocks = getSignalBlocks(t);
+  const exitBlocks   = getExitBlocks(t);
+  const allBlocks    = [...signalBlocks, ...exitBlocks];
+  const allItems     = allBlocks.flatMap(c => c.items);
+  const template     = allItems.find(i => i.id === cond.templateId);
+  const catColor     = template ? allBlocks.find(c => c.items.some(i => i.id === cond.templateId))?.color : '#6b7280';
+  const operators    = getOperators(t);
+  const dow          = getDow(t);
 
   const timeLeft  = cond.left?.type  === 'time_of_day';
   const timeRight = cond.right?.type === 'time_of_day';
@@ -399,19 +477,39 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
   const labelOp = (o, isTimePaired) => {
     if (!o) return '?';
     if (o.type === 'constant' && isTimePaired) return minutesToTime(o.value ?? 0);
-    const m = { price: o=>`${o.field||'close'} price`, lookback: o=>`${o.field||'close'} ${o.period||1}b ago`, sma: o=>`SMA(${o.period||20})`, ema: o=>`EMA(${o.period||20})`, rsi: o=>`RSI(${o.period||14})`, macd: o=>`MACD ${o.component||''}`, bollinger: o=>`BB ${o.component||''}`, highest_high: o=>`HH(${o.period||14})`, lowest_low: o=>`LL(${o.period||14})`, atr: o=>`ATR(${o.period||14})`, typical_price: ()=>'TypicalPrice', time_of_day: ()=>'⏰ Time', constant: o=>String(o.value??0), custom: o => { const ov = o.overrides && Object.keys(o.overrides).length; return `🔷 ${o.name||'?'}${ov ? ` (${ov} override${ov>1?'s':''})` : ''}`; } };
+    const m = {
+      price:         o => t('strategy.condPrice', { field: o.field || 'close' }),
+      lookback:      o => t('strategy.condLookback', { field: o.field || 'close', period: o.period || 1 }),
+      sma:           o => `SMA(${o.period || 20})`,
+      ema:           o => `EMA(${o.period || 20})`,
+      rsi:           o => `RSI(${o.period || 14})`,
+      macd:          o => `MACD ${o.component || ''}`,
+      bollinger:     o => `BB ${o.component || ''}`,
+      highest_high:  o => `HH(${o.period || 14})`,
+      lowest_low:    o => `LL(${o.period || 14})`,
+      atr:           o => `ATR(${o.period || 14})`,
+      typical_price: () => t('strategy.condTypicalPrice'),
+      time_of_day:   () => t('strategy.condTimeOfDay'),
+      constant:      o => String(o.value ?? 0),
+      custom: o => {
+        const ov = o.overrides && Object.keys(o.overrides).length;
+        const suffix = ov ? ` ${t(ov > 1 ? 'strategy.condOverrides' : 'strategy.condOverride', { count: ov })}` : '';
+        return `🔷 ${o.name || '?'}${suffix}`;
+      },
+    };
     return (m[o.type] || (() => o.type))(o);
   };
+
   const summary = cond.kind === 'exit_condition'
-    ? `${(cond.exitType||'').replace(/_/g,' ')} = ${cond.exitType === 'day_of_week' ? (DOW[cond.value] || cond.value) : cond.value}`
-    : `${labelOp(cond.left, timeRight)} ${OPERATORS.find(o=>o.value===cond.operator)?.label??cond.operator} ${labelOp(cond.right, timeLeft)}`;
+    ? `${t(`strategy.exitLabel_${cond.exitType}`, { defaultValue: (cond.exitType || '').replace(/_/g, ' ') })} = ${cond.exitType === 'day_of_week' ? (dow[cond.value] || cond.value) : cond.value}`
+    : `${labelOp(cond.left, timeRight)} ${operators.find(o => o.value === cond.operator)?.label ?? cond.operator} ${labelOp(cond.right, timeLeft)}`;
 
   return (
     <>
       {showCombiner && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0' }}>
           <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
-          <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#22d3ee', padding: '2px 10px', background: 'rgba(34,211,238,0.1)', borderRadius: 999, border: '1px solid rgba(34,211,238,0.2)' }}>AND</span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#22d3ee', padding: '2px 10px', background: 'rgba(34,211,238,0.1)', borderRadius: 999, border: '1px solid rgba(34,211,238,0.2)' }}>{t('strategy.andCombiner')}</span>
           <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
         </div>
       )}
@@ -442,7 +540,7 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
                   <select value={cond.operator} style={sStyle} onChange={e => onChange({ ...cond, operator: e.target.value })}>
-                    {OPERATORS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {operators.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                   <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
                 </div>
@@ -461,7 +559,10 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
 
 function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
   const { t } = useTranslation();
-  const role = ROLES.find(r => r.value === rule.role);
+  const roles        = getRoles(t);
+  const signalBlocks = getSignalBlocks(t);
+  const exitBlocks   = getExitBlocks(t);
+  const role = roles.find(r => r.value === rule.role);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTab, setPickerTab]   = useState('signal');
   const isExitRole = rule.role.startsWith('exit_');
@@ -479,12 +580,14 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
         <select value={rule.role}
           style={{ ...sStyle, fontWeight: 700, color: role?.color, background: role?.bg, border: `1px solid ${role?.border}` }}
           onChange={e => onChange({ ...rule, role: e.target.value })}>
-          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
-        <button type="button" onClick={onDelete}
-          style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '5px 12px', fontSize: '0.78rem' }}>
-          {t('common.delete')}
-        </button>
+        {onDelete && (
+          <button type="button" onClick={onDelete}
+            style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '5px 12px', fontSize: '0.78rem' }}>
+            {t('common.delete')}
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '10px 20px', background: '#0b1120', borderBottom: '1px solid #1f2937', flexWrap: 'wrap', flexShrink: 0 }}>
@@ -555,7 +658,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
                 <button type="button" style={{ background:'transparent', border:'none', color:'#6b7280', cursor:'pointer', fontSize:'1.1rem' }} onClick={() => setShowPicker(false)}>✕</button>
               </div>
 
-              {pickerTab === 'signal' && SIGNAL_BLOCKS.map(cat => (
+              {pickerTab === 'signal' && signalBlocks.map(cat => (
                 <div key={cat.category} style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: cat.color, marginBottom: 6 }}>{cat.category}</div>
                   {cat.items.map(item => (
@@ -574,7 +677,7 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
                 </div>
               ))}
 
-              {pickerTab === 'exit' && EXIT_BLOCKS.map(cat => (
+              {pickerTab === 'exit' && exitBlocks.map(cat => (
                 <div key={cat.category} style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: cat.color, marginBottom: 6 }}>{cat.category}</div>
                   {cat.items.map(item => (
@@ -954,12 +1057,19 @@ export default function StrategyBuilder() {
             ) : (
               <div>
                 {rulesForRole.map((r, idx) => (
-                  <div key={r._id} style={{ marginBottom: idx < rulesForRole.length - 1 ? 16 : 0 }}>
-                    <RuleEditor 
-                      rule={r} 
-                      onChange={updateRule} 
-                      onDelete={() => deleteRule(r._id)} 
-                      customIndicators={customIndicators} 
+                  <div key={r._id}>
+                    {idx > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0' }}>
+                        <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+                        <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#fb923c', padding: '2px 10px', background: 'rgba(251,146,60,0.1)', borderRadius: 999, border: '1px solid rgba(251,146,60,0.2)' }}>{t('strategy.orCombiner')}</span>
+                        <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+                      </div>
+                    )}
+                    <RuleEditor
+                      rule={r}
+                      onChange={updateRule}
+                      onDelete={rulesForRole.length > 1 ? () => deleteRule(r._id) : null}
+                      customIndicators={customIndicators}
                     />
                   </div>
                 ))}

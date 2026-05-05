@@ -43,8 +43,13 @@ const LANGS = ['en', 'et']
 
 export default function App() {
   const [view, setView] = useState('backtest')
+  const [appVersion, setAppVersion] = useState(null)
   const { t, i18n } = useTranslation()
   const isWide = view === 'analytics'
+
+  useEffect(() => {
+    fetch('/api/version').then(r => r.json()).then(d => setAppVersion(d.current)).catch(() => {})
+  }, [])
 
   function switchLang(lng) {
     i18n.changeLanguage(lng)
@@ -57,6 +62,7 @@ export default function App() {
         <div className="app-logo">
           <div className="app-logo-mark">📊</div>
           <span className="app-logo-text">{t('app.title')}</span>
+          {appVersion && <span style={{ fontSize: '0.7rem', color: 'var(--fg, #888)', opacity: 0.5, marginLeft: 4 }}>v{appVersion}</span>}
         </div>
         <nav className="app-nav">
           {VIEW_IDS.map(v => (
