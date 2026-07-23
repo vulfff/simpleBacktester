@@ -14,6 +14,7 @@ PERCENTILES = (5, 25, 50, 75, 95)
 MAX_SIMS = 10_000
 MIN_SAMPLES = 5
 BAND_POINTS = 200
+MAX_TOTAL_STEPS = 5_000_000
 
 
 def trade_returns(round_trips: List[Dict[str, Any]]) -> List[float]:
@@ -27,7 +28,8 @@ def bar_returns(equity_curve: List[Dict[str, Any]]) -> List[float]:
     prev: Optional[float] = None
     for point in equity_curve:
         eq = float(point.get("equity") or 0.0)
-        if prev:
+        if prev:  # deliberately skips the first point (prev is None) and the point
+                  # after a zero-equity bar (prev == 0.0) to avoid ZeroDivisionError
             out.append(eq / prev - 1.0)
         prev = eq
     return out
@@ -56,11 +58,15 @@ def run_monte_carlo(returns: List[float], n_sims: int = 1000,
     Returns {n_sims, n_steps, bands, final_return_pct, max_drawdown_pct,
     prob_loss_pct}. `bands` holds the normalized-equity percentile envelope at
     <= BAND_POINTS evenly spaced steps (plus step 0). Raises ValueError if
-    fewer than MIN_SAMPLES returns are supplied.
+    fewer than MIN_SAMPLES returns are supplied. Equity is floored at 0.0 each
+    step (ruin is absorbing, so a <= -100% draw can't flip the sign and
+    "recover" on a later multiplication), and n_sims is further capped so that
+    n_sims * len(returns) stays within MAX_TOTAL_STEPS of total resampling work.
     """
     if len(returns) < MIN_SAMPLES:
         raise ValueError(f"Need at least {MIN_SAMPLES} returns, got {len(returns)}")
     n_sims = max(1, min(int(n_sims), MAX_SIMS))
+    n_sims = max(1, min(n_sims, MAX_TOTAL_STEPS // len(returns)))
     rng = random.Random(seed)
     n_steps = len(returns)
 
@@ -76,7 +82,7 @@ def run_monte_carlo(returns: List[float], n_sims: int = 1000,
         max_dd = 0.0
         band_values[0].append(1.0)
         for step in range(1, n_steps + 1):
-            equity *= 1.0 + rng.choice(returns)
+            equity = max(0.0, equity * (1.0 + rng.choice(returns)))
             if equity > peak:
                 peak = equity
             elif peak > 0:

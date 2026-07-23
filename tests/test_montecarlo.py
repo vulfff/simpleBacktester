@@ -84,3 +84,24 @@ def test_all_losing_returns_prob_loss_100():
     result = run_monte_carlo([-0.01, -0.02, -0.03, -0.01, -0.02], n_sims=50, seed=1)
     assert result["prob_loss_pct"] == 100.0
     assert result["max_drawdown_pct"]["p50"] > 0
+
+
+def test_equity_floored_at_zero_on_deep_loss_draws():
+    returns = [-1.5, 0.1, 0.05, -0.02, 0.03]
+    result = run_monte_carlo(returns, n_sims=200, seed=1)
+    for band in result["bands"]:
+        for key in ("p5", "p25", "p50", "p75", "p95"):
+            assert band[key] >= 0.0
+    assert result["final_return_pct"]["p5"] >= -100.0
+    assert result["max_drawdown_pct"]["p95"] <= 100.0
+
+
+def test_ruin_is_absorbing_and_deterministic():
+    result = run_monte_carlo([-1.5] * 5, n_sims=10, seed=1)
+    assert result["final_return_pct"]["p50"] == -100.0
+    assert result["prob_loss_pct"] == 100.0
+
+
+def test_total_work_capped_for_large_bar_counts():
+    result = run_monte_carlo([0.001] * 100_000, n_sims=1000, seed=1)
+    assert result["n_sims"] == 50

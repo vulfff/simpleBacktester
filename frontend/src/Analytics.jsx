@@ -314,6 +314,7 @@ function MonteCarloPanel({ runId }) {
             <option key={n} value={n}>{n} {t('analytics.mcSims').toLowerCase()}</option>
           ))}
         </select>
+        <span style={{ color: 'var(--text-mute)', fontSize: '0.72rem' }}>{t('analytics.mcMethod')}</span>
         <select value={method} onChange={e => setMethod(e.target.value)} style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
           <option value="trades">{t('analytics.mcMethodTrades')}</option>
           <option value="returns">{t('analytics.mcMethodReturns')}</option>
