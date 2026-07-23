@@ -4,19 +4,19 @@ import { useTranslation } from 'react-i18next';
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 const STRATEGY_ACCENT = {
-  solid: '#3b82f6',
-  badgeBg: 'rgba(59,130,246,0.15)',
-  badgeBorder: 'rgba(59,130,246,0.3)',
-  badgeText: '#93c5fd',
-  dataText: '#93c5fd',
+  solid: '#5f9fd6',
+  badgeBg: 'rgba(95,159,214,0.15)',
+  badgeBorder: 'rgba(95,159,214,0.3)',
+  badgeText: '#a8cbe8',
+  dataText: '#a8cbe8',
 };
 
 const INDICATOR_ACCENT = {
-  solid: '#8b5cf6',
-  badgeBg: 'rgba(139,92,246,0.15)',
-  badgeBorder: 'rgba(139,92,246,0.3)',
-  badgeText: '#c4b5fd',
-  dataText: '#d8b4fe',
+  solid: '#9678d8',
+  badgeBg: 'rgba(150,120,216,0.15)',
+  badgeBorder: 'rgba(150,120,216,0.3)',
+  badgeText: '#c5b8ec',
+  dataText: '#d4c9f0',
 };
 
 /**
@@ -156,19 +156,19 @@ export function AIChat({
 
   const titleBlock = (
     <>
-      <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ece5d6', display: 'flex', alignItems: 'center', gap: 8 }}>
         {t(`${i18nPrefix}.title`)}
         {modelName ? (
           <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: accent.badgeBg, border: `1px solid ${accent.badgeBorder}`, color: accent.badgeText }}>
             {modelName}
           </span>
         ) : modelName === null ? (
-          <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: 'rgba(240,166,60,0.15)', border: '1px solid rgba(240,166,60,0.3)', color: '#f3c057' }}>
             {t(`${i18nPrefix}.noModel`)}
           </span>
         ) : null}
       </div>
-      <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>{t(`${i18nPrefix}.subtitle`)}</div>
+      <div style={{ fontSize: '0.72rem', color: '#a89c8a' }}>{t(`${i18nPrefix}.subtitle`)}</div>
     </>
   );
 
@@ -177,16 +177,16 @@ export function AIChat({
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      background: '#0b1120',
-      border: '1px solid #1e293b',
-      borderRadius: 12,
+      background: '#131110',
+      border: '1px solid #262019',
+      borderRadius: 8,
       overflow: 'hidden'
     }}>
       {/* Header */}
       <div style={{
         padding: '12px 16px',
-        background: '#111827',
-        borderBottom: '1px solid #1e293b',
+        background: '#1a1715',
+        borderBottom: '1px solid #262019',
         display: 'flex',
         alignItems: 'center',
         ...(showTemperature ? { justifyContent: 'space-between', gap: 12 } : { gap: 8 })
@@ -203,7 +203,7 @@ export function AIChat({
           </>
         )}
         {showTemperature && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#9ca3af' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#a89c8a' }}>
             {t(`${i18nPrefix}.creativity`)}
             <input
               type="range"
@@ -246,12 +246,12 @@ export function AIChat({
                 background: msg.role === 'user'
                   ? accent.solid
                   : msg.isError
-                    ? '#ef4444'
+                    ? 'rgba(226,96,78,0.12)'
                     : msg.isWarning
-                      ? '#f59e0b'
-                      : '#1e293b',
-                color: msg.role === 'user' || msg.isError ? '#ffffff' : '#e5e7eb',
-                border: msg.isError ? '1px solid #7f1d1d' : msg.isWarning ? '1px solid #92400e' : 'none',
+                      ? 'rgba(243,192,87,0.1)'
+                      : '#262019',
+                color: msg.role === 'user' ? '#131110' : msg.isError ? '#f0a99b' : msg.isWarning ? '#f3c057' : '#ece5d6',
+                border: msg.isError ? '1px solid rgba(226,96,78,0.35)' : msg.isWarning ? '1px solid rgba(243,192,87,0.3)' : 'none',
                 whiteSpace: 'pre-wrap'
               }}
             >
@@ -272,7 +272,7 @@ export function AIChat({
           </div>
         ))}
         {loading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9ca3af', fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#a89c8a', fontSize: '0.85rem' }}>
             <span style={{ animation: 'spin 1s linear infinite' }}>⚙️</span>
             {t(`${i18nPrefix}.${loadingKey}`)}
             <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -284,16 +284,16 @@ export function AIChat({
       {/* Input */}
       <div style={{
         padding: '12px 16px',
-        borderTop: '1px solid #1e293b',
-        background: '#0f1419'
+        borderTop: '1px solid #262019',
+        background: '#131110'
       }}>
         {error && (
           <div style={{
             padding: '8px 12px',
-            background: '#7f1d1d',
+            background: '#43201a',
             borderRadius: 6,
             fontSize: '0.75rem',
-            color: '#fecaca',
+            color: '#f3c6ba',
             marginBottom: 8
           }}>
             {error}
@@ -310,10 +310,10 @@ export function AIChat({
             style={{
               flex: 1,
               padding: '10px 12px',
-              background: '#1e293b',
-              border: '1px solid #334155',
+              background: '#262019',
+              border: '1px solid #322b21',
               borderRadius: 8,
-              color: '#e5e7eb',
+              color: '#ece5d6',
               fontSize: '0.85rem',
               outline: 'none'
             }}
@@ -323,10 +323,10 @@ export function AIChat({
             disabled={loading || !input.trim()}
             style={{
               padding: '10px 16px',
-              background: loading || !input.trim() ? '#1e293b' : accent.solid,
+              background: loading || !input.trim() ? '#262019' : accent.solid,
               border: 'none',
               borderRadius: 8,
-              color: loading || !input.trim() ? '#6b7280' : '#ffffff',
+              color: loading || !input.trim() ? '#786d5e' : '#131110',
               cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               fontSize: '0.85rem',
               fontWeight: 600

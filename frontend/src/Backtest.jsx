@@ -74,13 +74,13 @@ function TickerSearch({ value, onChange, disabled }) {
           style={{ paddingRight: loading ? 32 : undefined }}
         />
         {loading && (
-          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#6b7280' }}>⟳</span>
+          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#786d5e' }}>⟳</span>
         )}
       </div>
       {open && results.length > 0 && (
         <div style={{
           position: 'absolute', zIndex: 100, top: 'calc(100% + 4px)', left: 0, right: 0,
-          background: '#0f172a', border: '1px solid #334155', borderRadius: 8,
+          background: '#131110', border: '1px solid #322b21', borderRadius: 8,
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
           maxHeight: 260, overflowY: 'auto',
         }}>
@@ -90,11 +90,11 @@ function TickerSearch({ value, onChange, disabled }) {
               onMouseEnter={() => setCursor(i)}
               style={{
                 padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
-                background: i === cursor ? 'rgba(59,130,246,0.15)' : 'transparent',
-                borderBottom: i < results.length - 1 ? '1px solid #1e293b' : 'none',
+                background: i === cursor ? 'rgba(95,159,214,0.15)' : 'transparent',
+                borderBottom: i < results.length - 1 ? '1px solid #262019' : 'none',
               }}>
-              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#e5e7eb', minWidth: 60 }}>{r.symbol}</span>
-              <span style={{ fontSize: '0.78rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#ece5d6', minWidth: 60 }}>{r.symbol}</span>
+              <span style={{ fontSize: '0.78rem', color: '#786d5e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
             </div>
           ))}
         </div>
@@ -253,9 +253,9 @@ export default function Backtest({ goTo }) {
                 onClick={() => goTo?.('strategy')}>{t('backtest.manageStrategies')}</button>
             </div>
             {strategies.length === 0 ? (
-              <div style={{ background:'rgba(124,134,247,0.07)', border:'1px dashed rgba(124,134,247,0.35)',
+              <div style={{ background:'rgba(240,166,60,0.03)', border:'1px dashed var(--border-hi)',
                 borderRadius:'var(--r)', padding:'20px', textAlign:'center' }}>
-                <div style={{ fontSize:'1.6rem', marginBottom:6 }}>🧩</div>
+                <div style={{ fontFamily:'var(--mono)', fontSize:'1.3rem', color:'var(--text-mute)', marginBottom:6 }}>--</div>
                 <p style={{ color:'var(--text-mute)', margin:'0 0 10px', fontSize:'0.86rem' }}>{t('backtest.noStrategiesTitle')}</p>
                 <button type="button" className="btn btn-primary btn-sm btn-pill"
                   onClick={() => goTo?.('strategy')}>{t('backtest.openStrategyBuilder')}</button>
@@ -268,8 +268,8 @@ export default function Backtest({ goTo }) {
                     style={{
                       padding:'6px 14px', borderRadius:'var(--r)', fontSize:'0.84rem',
                       fontWeight: s.id===selId ? 700 : 500, cursor:'pointer', transition:'all 0.15s',
-                      background: s.id===selId ? 'rgba(124,134,247,0.12)' : 'var(--surface)',
-                      border: s.id===selId ? '1px solid rgba(124,134,247,0.45)' : '1px solid var(--border)',
+                      background: s.id===selId ? 'rgba(164,143,224,0.12)' : 'var(--surface)',
+                      border: s.id===selId ? '1px solid rgba(164,143,224,0.45)' : '1px solid var(--border)',
                       color: s.id===selId ? 'var(--accent2)' : 'var(--text-soft)',
                     }}>
                     {s.name || t('backtest.strategyFallback', { id: s.id })}
@@ -338,12 +338,12 @@ export default function Backtest({ goTo }) {
               {hasCached && (
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8 }}>
                   <span style={{ fontSize:'0.75rem', padding:'2px 10px', borderRadius:999,
-                    background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399' }}>
+                    background:'rgba(88,196,140,0.1)', border:'1px solid rgba(88,196,140,0.25)', color:'#58c48c' }}>
                     {t('backtest.barsCached', { count: cachedBars.toLocaleString() })}
                   </span>
                   <button type="button"
-                    style={{ fontSize:'0.72rem', background:'transparent', border:'1px solid #334155',
-                      borderRadius:6, color:'#6b7280', cursor:'pointer', padding:'2px 8px' }}
+                    style={{ fontSize:'0.72rem', background:'transparent', border:'1px solid #322b21',
+                      borderRadius:6, color:'#786d5e', cursor:'pointer', padding:'2px 8px' }}
                     onClick={() => { dataCache.delete(currentKey); setFromCache(null) }}>
                     {t('backtest.reFetch')}
                   </button>
@@ -392,8 +392,8 @@ export default function Backtest({ goTo }) {
                         style={{
                           padding:'5px 14px', borderRadius:'var(--r)', fontSize:'0.82rem',
                           cursor:'pointer', transition:'all 0.15s',
-                          background: sizingMode===v ? 'rgba(124,134,247,0.12)' : 'var(--panel)',
-                          border: sizingMode===v ? '1px solid rgba(124,134,247,0.45)' : '1px solid var(--border)',
+                          background: sizingMode===v ? 'rgba(164,143,224,0.12)' : 'var(--panel)',
+                          border: sizingMode===v ? '1px solid rgba(164,143,224,0.45)' : '1px solid var(--border)',
                           color: sizingMode===v ? 'var(--accent2)' : 'var(--text-soft)',
                           fontWeight: sizingMode===v ? 700 : 400,
                         }}>
@@ -454,8 +454,8 @@ export default function Backtest({ goTo }) {
                         style={{
                           padding:'5px 14px', borderRadius:'var(--r)', fontSize:'0.82rem',
                           cursor:'pointer', transition:'all 0.15s',
-                          background: allowFractional===val ? 'rgba(124,134,247,0.12)' : 'var(--panel)',
-                          border: allowFractional===val ? '1px solid rgba(124,134,247,0.45)' : '1px solid var(--border)',
+                          background: allowFractional===val ? 'rgba(164,143,224,0.12)' : 'var(--panel)',
+                          border: allowFractional===val ? '1px solid rgba(164,143,224,0.45)' : '1px solid var(--border)',
                           color: allowFractional===val ? 'var(--accent2)' : 'var(--text-soft)',
                           fontWeight: allowFractional===val ? 700 : 400,
                         }}>
@@ -500,15 +500,15 @@ export default function Backtest({ goTo }) {
               <div style={{ fontSize:'0.76rem', color:'var(--text-mute)', marginTop:2 }}>
                 {selected?.name} · {method==='api' ? ticker : file?.name}
                 {result.trades > 0 && <> · {t('backtest.tradeCount', { count: result.trades })}</>}
-                {fromCache === true  && <> · <span style={{ color:'#34d399' }}>{t('backtest.cachedData')}</span></>}
-                {fromCache === false && <> · <span style={{ color:'#60a5fa' }}>{t('backtest.freshFetch')}</span></>}
+                {fromCache === true  && <> · <span style={{ color:'#58c48c' }}>{t('backtest.cachedData')}</span></>}
+                {fromCache === false && <> · <span style={{ color:'#6fb3e8' }}>{t('backtest.freshFetch')}</span></>}
               </div>
             </div>
             <div style={{
               display:'flex', alignItems:'center', gap:7, padding:'5px 14px',
               borderRadius:999,
-              background: positive?'rgba(47,216,154,0.09)':'rgba(244,114,106,0.09)',
-              border: `1px solid ${positive?'rgba(47,216,154,0.3)':'rgba(244,114,106,0.3)'}`,
+              background: positive?'rgba(88,196,140,0.09)':'rgba(226,96,78,0.09)',
+              border: `1px solid ${positive?'rgba(88,196,140,0.3)':'rgba(226,96,78,0.3)'}`,
             }}>
               <span>{positive?'📈':'📉'}</span>
               <span style={{ fontWeight:800, color: positive?'var(--green)':'var(--red)' }}>
@@ -551,7 +551,7 @@ export default function Backtest({ goTo }) {
                     borderRadius:'var(--r)', padding:'9px 14px', marginBottom:5
                   }}>
                     <div style={{ width:30, height:30, borderRadius:'50%', fontSize:'0.72rem', fontWeight:800,
-                      background:'rgba(58,183,245,0.1)', border:'1px solid rgba(58,183,245,0.25)',
+                      background:'rgba(240,166,60,0.1)', border:'1px solid rgba(240,166,60,0.25)',
                       display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', flexShrink:0 }}>
                       {sym.slice(0,2).toUpperCase()}
                     </div>

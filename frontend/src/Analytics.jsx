@@ -7,7 +7,7 @@ import {
 
 const API = import.meta.env.VITE_API_BASE || ''
 
-const RUN_COLORS = ['#3ab7f5', '#2fd89a', '#f9c74f', '#e879c0', '#fb923c']
+const RUN_COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181']
 
 const RUN_PROMPTS = [
   'Summarize the overall performance of this run.',
@@ -240,12 +240,12 @@ function ExecBadges({ params }) {
   const badges = []
   if (params.sizing_mode === 'all_in') {
     const lev = params.leverage && params.leverage !== 1 ? ` ${params.leverage}×` : ''
-    badges.push({ label: `${t('analytics.allInBadge')}${lev}`, color: '#a78bfa' })
+    badges.push({ label: `${t('analytics.allInBadge')}${lev}`, color: '#a48fe0' })
   }
   if (params.commission_mode === 'pct')
-    badges.push({ label: t('analytics.pctCommission', { value: params.commission_value }), color: '#60a5fa' })
+    badges.push({ label: t('analytics.pctCommission', { value: params.commission_value }), color: '#6fb3e8' })
   if (params.commission_mode === 'flat')
-    badges.push({ label: t('analytics.flatCommission', { value: params.commission_value }), color: '#60a5fa' })
+    badges.push({ label: t('analytics.flatCommission', { value: params.commission_value }), color: '#6fb3e8' })
   if (!badges.length) return null
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
@@ -273,8 +273,8 @@ function RunCard({
     <div
       onClick={() => onSelect(run.id)}
       style={{
-        background:   isSelected ? 'rgba(58,183,245,0.08)' : 'var(--surface)',
-        border:       `1px solid ${isDeleteSelected ? 'rgba(244,114,106,0.5)' : isSelected ? 'var(--accent)' : 'var(--border)'}`,
+        background:   isSelected ? 'rgba(240,166,60,0.08)' : 'var(--surface)',
+        border:       `1px solid ${isDeleteSelected ? 'rgba(226,96,78,0.5)' : isSelected ? 'var(--accent)' : 'var(--border)'}`,
         borderLeft:   compareColor        ? `3px solid ${compareColor}`
                     : isDeleteSelected    ? '3px solid var(--red)'
                     : undefined,
@@ -342,7 +342,7 @@ function RunCard({
           <div style={{
             width: 13, height: 13, borderRadius: 3, flexShrink: 0, transition: 'all 0.15s',
             border:     `1.5px solid ${isDeleteSelected ? 'var(--red)' : 'var(--border)'}`,
-            background: isDeleteSelected ? 'rgba(244,114,106,0.25)' : 'transparent',
+            background: isDeleteSelected ? 'rgba(226,96,78,0.25)' : 'transparent',
           }} />
           <span style={{ fontSize: '0.67rem', color: 'var(--text-mute)' }}>{t('analytics.select')}</span>
         </div>
@@ -724,7 +724,7 @@ export default function Analytics() {
               onClick={deleteAll}
               style={{
                 background: 'none',
-                border: '1px solid rgba(244,114,106,0.3)',
+                border: '1px solid rgba(226,96,78,0.3)',
                 borderRadius: 'var(--r)',
                 color: 'var(--red)',
                 fontSize: '0.75rem',
@@ -807,7 +807,7 @@ export default function Analytics() {
                   {(selectedRun.warmup_bars > 0 || params.warmup_bars > 0) && (
                     <span style={{
                       fontSize: '0.72rem',
-                      background: 'rgba(58,183,245,0.1)', color: 'var(--accent)',
+                      background: 'rgba(240,166,60,0.1)', color: 'var(--accent)',
                       borderRadius: 6, padding: '3px 8px',
                     }}>
                       {t('analytics.barWarmup', { count: selectedRun.warmup_bars || params.warmup_bars })}
@@ -831,7 +831,7 @@ export default function Analytics() {
                     <button key={tab.id}
                       className={`tab-btn${chartTab === tab.id ? ' active' : ''}`}
                       onClick={() => setChartTab(tab.id)}
-                      style={{ flex: 'none', padding: '5px 18px', ...(tab.id === 'ai' && chartTab !== 'ai' ? { color: '#f59e0b' } : {}) }}>
+                      style={{ flex: 'none', padding: '5px 18px', ...(tab.id === 'ai' && chartTab !== 'ai' ? { color: '#f0a63c' } : {}) }}>
                       {tab.label}
                     </button>
                   ))}
@@ -988,7 +988,7 @@ export default function Analytics() {
                               padding: '8px 13px',
                               borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                               background: msg.role === 'user' ? 'var(--accent)' : 'var(--panel2)',
-                              color: msg.role === 'user' ? '#fff' : 'var(--text)',
+                              color: msg.role === 'user' ? '#1a1206' : 'var(--text)',
                               fontSize: '0.82rem',
                               lineHeight: 1.55,
                               whiteSpace: 'pre-wrap',

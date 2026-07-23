@@ -18,7 +18,7 @@ const timeToMinutes = s => {
 const SIGNAL_BLOCKS = [
   {
     category: "Price Conditions",
-    color: "#22d3ee",
+    color: "#f0a63c",
     items: [
       { id: 'price_above_value', emoji: '📈', label: 'Price is above a value',        desc: 'Trigger when price exceeds a fixed number',
         left: { type: 'price', field: 'close' }, operator: '>', right: { type: 'constant', value: 0 } },
@@ -32,7 +32,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "Moving Averages",
-    color: "#34d399",
+    color: "#58c48c",
     items: [
       { id: 'price_above_sma',  emoji: '〰️', label: 'Price above SMA',                  desc: 'Price above a simple moving average — bullish',
         left: { type: 'price', field: 'close' }, operator: '>', right: { type: 'sma', field: 'close', period: 20 } },
@@ -48,7 +48,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "RSI",
-    color: "#a78bfa",
+    color: "#a48fe0",
     items: [
       { id: 'rsi_oversold',   emoji: '🔻', label: 'RSI below 30 (Oversold)',   desc: 'Potential bounce — asset may be oversold',
         left: { type: 'rsi', field: 'close', period: 14 }, operator: '<', right: { type: 'constant', value: 30 } },
@@ -60,7 +60,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "MACD",
-    color: "#fb923c",
+    color: "#e2884a",
     items: [
       { id: 'macd_cross',      emoji: '📡', label: 'MACD crosses above Signal', desc: 'Bullish MACD crossover',
         left: { type: 'macd', fast: 12, slow: 26, signal: 9, component: 'macd' }, operator: 'cross_above', right: { type: 'macd', fast: 12, slow: 26, signal: 9, component: 'signal' } },
@@ -70,7 +70,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "Bollinger Bands",
-    color: "#f472b6",
+    color: "#dd7f9f",
     items: [
       { id: 'bb_lower', emoji: '⬇️', label: 'Price below Lower Band', desc: 'Near lower band — potential bounce',
         left: { type: 'price', field: 'close' }, operator: '<', right: { type: 'bollinger', field: 'close', period: 20, std_dev: 2, component: 'lower' } },
@@ -80,7 +80,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "Volume",
-    color: "#f59e0b",
+    color: "#f0a63c",
     items: [
       { id: 'volume_spike', emoji: '📊', label: 'Volume spike (above average)', desc: 'Volume higher than its moving average',
         left: { type: 'price', field: 'volume' }, operator: '>', right: { type: 'sma', field: 'volume', period: 20 } },
@@ -88,7 +88,7 @@ const SIGNAL_BLOCKS = [
   },
   {
     category: "Time-Based Signals",
-    color: "#818cf8",
+    color: "#b3a2e6",
     items: [
       { id: 'after_time',  emoji: '⏰', label: 'After a specific time',  desc: 'Signal fires only at or after this time of day (UTC)',
         left: { type: 'time_of_day' }, operator: '>=', right: { type: 'constant', value: 570 } },
@@ -101,7 +101,7 @@ const SIGNAL_BLOCKS = [
 const EXIT_BLOCKS = [
   {
     category: "Profit & Loss",
-    color: "#34d399",
+    color: "#58c48c",
     items: [
       { id: 'take_profit_pct',  emoji: '🎯', label: 'Take profit at +X%',    desc: 'Exit when position profit reaches this percentage',
         kind: 'exit_condition', exitType: 'take_profit_pct', value: 5 },
@@ -115,7 +115,7 @@ const EXIT_BLOCKS = [
   },
   {
     category: "Time-Based",
-    color: "#22d3ee",
+    color: "#f0a63c",
     items: [
       { id: 'bars_held',   emoji: '⏱️', label: 'After N bars in trade',        desc: 'Exit after being in the position for N candles',
         kind: 'exit_condition', exitType: 'bars_held', value: 10 },
@@ -130,10 +130,10 @@ const EXIT_BLOCKS = [
 const DOW = [null,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']; // ISO weekday: 1=Mon..7=Sun
 
 const ROLES = [
-  { value: 'entry_long',  label: '🟢 Buy (Enter Long)',   color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)'  },
-  { value: 'exit_long',   label: '🔴 Sell (Exit Long)',   color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.4)' },
-  { value: 'entry_short', label: '🟠 Enter Short',        color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  border: 'rgba(251,146,60,0.4)'  },
-  { value: 'exit_short',  label: '🟣 Exit Short',         color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.4)' },
+  { value: 'entry_long',  label: '🟢 Buy (Enter Long)',   color: '#58c48c', bg: 'rgba(88,196,140,0.12)',  border: 'rgba(88,196,140,0.4)'  },
+  { value: 'exit_long',   label: '🔴 Sell (Exit Long)',   color: '#e87f6d', bg: 'rgba(232,127,109,0.12)', border: 'rgba(232,127,109,0.4)' },
+  { value: 'entry_short', label: '🟠 Enter Short',        color: '#e2884a', bg: 'rgba(226,136,74,0.12)',  border: 'rgba(226,136,74,0.4)'  },
+  { value: 'exit_short',  label: '🟣 Exit Short',         color: '#a48fe0', bg: 'rgba(164,143,224,0.12)', border: 'rgba(164,143,224,0.4)' },
 ];
 
 const OPERATORS = [
@@ -181,10 +181,10 @@ const getExitBlocks = t => EXIT_BLOCKS.map(cat => ({
 }));
 
 const getRoles = t => [
-  { value: 'entry_long',  label: t('strategy.buyLong'),        color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)'  },
-  { value: 'exit_long',   label: t('strategy.sellLong'),       color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.4)' },
-  { value: 'entry_short', label: t('strategy.enterShort'),     color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  border: 'rgba(251,146,60,0.4)'  },
-  { value: 'exit_short',  label: t('strategy.exitShortLabel'), color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.4)' },
+  { value: 'entry_long',  label: t('strategy.buyLong'),        color: '#58c48c', bg: 'rgba(88,196,140,0.12)',  border: 'rgba(88,196,140,0.4)'  },
+  { value: 'exit_long',   label: t('strategy.sellLong'),       color: '#e87f6d', bg: 'rgba(232,127,109,0.12)', border: 'rgba(232,127,109,0.4)' },
+  { value: 'entry_short', label: t('strategy.enterShort'),     color: '#e2884a', bg: 'rgba(226,136,74,0.12)',  border: 'rgba(226,136,74,0.4)'  },
+  { value: 'exit_short',  label: t('strategy.exitShortLabel'), color: '#a48fe0', bg: 'rgba(164,143,224,0.12)', border: 'rgba(164,143,224,0.4)' },
 ];
 
 const getOperators = t => [
@@ -264,8 +264,8 @@ function inflateStrategyConfig(configStr) {
   }
 }
 
-const iStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', width: 75, outline: 'none' };
-const sStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', outline: 'none' };
+const iStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 6, padding: '4px 9px', color: '#ece5d6', fontSize: '0.83rem', width: 75, outline: 'none' };
+const sStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 6, padding: '4px 9px', color: '#ece5d6', fontSize: '0.83rem', outline: 'none' };
 const PRICE_FIELDS = ['close','high','low','volume'];
 
 function OperandEditor({ operand, onChange, label, isTimeSide }) {
@@ -288,8 +288,8 @@ function OperandEditor({ operand, onChange, label, isTimeSide }) {
   };
   const set = (k, v) => onChange({ ...operand, [k]: v });
   return (
-    <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
-      <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 8 }}>{label}</div>
+    <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 10, padding: '10px 14px' }}>
+      <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <select value={operand?.type || 'price'} style={sStyle} onChange={e => {
           const t = e.target.value;
@@ -303,7 +303,7 @@ function OperandEditor({ operand, onChange, label, isTimeSide }) {
           <input type="time" value={minutesToTime(operand.value ?? 0)} style={{ ...iStyle, width: 90 }}
             onChange={e => set('value', timeToMinutes(e.target.value))} />
         )}
-        {operand?.type === 'time_of_day' && <span style={{ fontSize: '0.74rem', color: '#818cf8' }}>{t('strategy.minutesSinceMidnight')}</span>}
+        {operand?.type === 'time_of_day' && <span style={{ fontSize: '0.74rem', color: '#b3a2e6' }}>{t('strategy.minutesSinceMidnight')}</span>}
         {['price','lookback','sma','ema','rsi','bollinger','highest_high','lowest_low'].includes(operand?.type) && (
           <select value={operand.field || 'close'} style={sStyle} onChange={e => set('field', e.target.value)}>
             {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
@@ -311,17 +311,17 @@ function OperandEditor({ operand, onChange, label, isTimeSide }) {
         )}
         {['lookback','sma','ema','rsi','highest_high','lowest_low','atr'].includes(operand?.type) && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{operand.type === 'lookback' ? t('strategy.barsAgo') : t('strategy.period')}</span>
+            <span style={{ fontSize: '0.74rem', color: '#a89c8a' }}>{operand.type === 'lookback' ? t('strategy.barsAgo') : t('strategy.period')}</span>
             <input type="number" value={operand.period || 14} min={1} style={iStyle} onChange={e => set('period', parseInt(e.target.value) || 1)} />
           </label>
         )}
         {operand?.type === 'bollinger' && <>
           <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>period:</span>
+            <span style={{ fontSize: '0.74rem', color: '#a89c8a' }}>period:</span>
             <input type="number" value={operand.period || 20} min={2} style={iStyle} onChange={e => set('period', parseInt(e.target.value) || 20)} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>σ:</span>
+            <span style={{ fontSize: '0.74rem', color: '#a89c8a' }}>σ:</span>
             <input type="number" value={operand.std_dev || 2} min={0.1} step={0.1} style={{ ...iStyle, width: 55 }} onChange={e => set('std_dev', parseFloat(e.target.value) || 2)} />
           </label>
           <select value={operand.component || 'upper'} style={sStyle} onChange={e => set('component', e.target.value)}>
@@ -331,7 +331,7 @@ function OperandEditor({ operand, onChange, label, isTimeSide }) {
         {operand?.type === 'macd' && <>
           {['fast','slow','signal'].map(k => (
             <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{k}:</span>
+              <span style={{ fontSize: '0.74rem', color: '#a89c8a' }}>{k}:</span>
               <input type="number" value={operand[k] || (k==='fast'?12:k==='slow'?26:9)} min={1} style={iStyle} onChange={e => set(k, parseInt(e.target.value)||1)} />
             </label>
           ))}
@@ -360,7 +360,7 @@ function ExitConditionEditor({ cond, onChange }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{meta.pre}</span>
+      <span style={{ fontSize: '0.85rem', color: '#a89c8a' }}>{meta.pre}</span>
       {meta.isDow ? (
         <select value={cond.value} style={sStyle} onChange={e => onChange({ ...cond, value: parseInt(e.target.value) })}>
           {dow.map((d, i) => d && <option key={i} value={i}>{d}</option>)}
@@ -369,7 +369,7 @@ function ExitConditionEditor({ cond, onChange }) {
         <input type="number" value={cond.value} min={meta.min} max={meta.max} step={meta.step} style={{ ...iStyle, width: 90 }}
           onChange={e => onChange({ ...cond, value: parseFloat(e.target.value) || 0 })} />
       )}
-      {meta.suf && <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{meta.suf}</span>}
+      {meta.suf && <span style={{ fontSize: '0.85rem', color: '#a89c8a' }}>{meta.suf}</span>}
     </div>
   );
 }
@@ -382,26 +382,26 @@ function CustomOperandPanel({ operand, onChange, customIndicators, label = 'Left
   const params = (ind?.editable_params || []).map(p => ({ path: p.path, label: p.label, defaultValue: p.default_value, paramType: p.param_type }));
   const overrides = operand.overrides || {};
   return (
-    <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>
-      <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 8 }}>{label}</div>
+    <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 10, padding: '10px 14px' }}>
+      <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: params.length ? 10 : 0 }}>
         <span style={{ fontSize: '0.9rem' }}>🔷</span>
-        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#22d3ee' }}>{operand.name}</span>
-        <span style={{ fontSize: '0.72rem', color: '#4b5563', marginLeft: 2 }}>{t('strategy.customIndicator')}</span>
+        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f0a63c' }}>{operand.name}</span>
+        <span style={{ fontSize: '0.72rem', color: '#5c5346', marginLeft: 2 }}>{t('strategy.customIndicator')}</span>
       </div>
       {params.length === 0 && (
-        <div style={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic' }}>{t('strategy.noAdjustableParams')}</div>
+        <div style={{ fontSize: '0.75rem', color: '#786d5e', fontStyle: 'italic' }}>{t('strategy.noAdjustableParams')}</div>
       )}
       {params.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {params.map(p => (
             <label key={p.path} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{p.label}:</span>
+              <span style={{ fontSize: '0.74rem', color: '#a89c8a' }}>{p.label}:</span>
               <input
                 type="number"
                 step={p.paramType === 'int' ? 1 : 0.01}
                 value={overrides[p.path] ?? p.defaultValue}
-                style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '4px 9px', color: '#e5e7eb', fontSize: '0.83rem', width: 75, outline: 'none' }}
+                style={{ background: '#131110', border: '1px solid #322b21', borderRadius: 6, padding: '4px 9px', color: '#ece5d6', fontSize: '0.83rem', width: 75, outline: 'none' }}
                 onChange={e => {
                   const raw = e.target.value;
                   const v = p.paramType === 'int' ? (parseInt(raw) || p.defaultValue) : (parseFloat(raw) || p.defaultValue);
@@ -409,7 +409,7 @@ function CustomOperandPanel({ operand, onChange, customIndicators, label = 'Left
                 }}
               />
               {overrides[p.path] !== undefined && overrides[p.path] !== p.defaultValue && (
-                <span style={{ fontSize: '0.68rem', color: '#6b7280' }}>{t('strategy.default', { value: p.defaultValue })}</span>
+                <span style={{ fontSize: '0.68rem', color: '#786d5e' }}>{t('strategy.default', { value: p.defaultValue })}</span>
               )}
             </label>
           ))}
@@ -427,7 +427,7 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
   const allBlocks    = [...signalBlocks, ...exitBlocks];
   const allItems     = allBlocks.flatMap(c => c.items);
   const template     = allItems.find(i => i.id === cond.templateId);
-  const catColor     = template ? allBlocks.find(c => c.items.some(i => i.id === cond.templateId))?.color : '#6b7280';
+  const catColor     = template ? allBlocks.find(c => c.items.some(i => i.id === cond.templateId))?.color : '#786d5e';
   const operators    = getOperators(t);
   const dow          = getDow(t);
 
@@ -468,27 +468,27 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
     <>
       {showCombiner && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0' }}>
-          <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
-          <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#22d3ee', padding: '2px 10px', background: 'rgba(34,211,238,0.1)', borderRadius: 999, border: '1px solid rgba(34,211,238,0.2)' }}>{t('strategy.andCombiner')}</span>
-          <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+          <div style={{ flex: 1, height: 1, background: '#221e18' }} />
+          <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#f0a63c', padding: '2px 10px', background: 'rgba(240,166,60,0.1)', borderRadius: 999, border: '1px solid rgba(240,166,60,0.2)' }}>{t('strategy.andCombiner')}</span>
+          <div style={{ flex: 1, height: 1, background: '#221e18' }} />
         </div>
       )}
-      <div style={{ background: '#111827', border: `1px solid ${catColor||'#1f2937'}44`, borderRadius: 12, padding: '12px 16px', marginBottom: 0 }}>
+      <div style={{ background: '#1a1715', border: `1px solid ${catColor||'#221e18'}44`, borderRadius: 8, padding: '12px 16px', marginBottom: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {template && <span style={{ fontSize: '1.05rem' }}>{template.emoji}</span>}
           <div style={{ flex: 1, minWidth: 0 }}>
             {template && <div style={{ fontSize: '0.73rem', fontWeight: 700, color: catColor, marginBottom: 1 }}>{template.label}</div>}
-            <div style={{ fontSize: '0.78rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</div>
+            <div style={{ fontSize: '0.78rem', color: '#a89c8a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</div>
           </div>
-          <button type="button" style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '0.75rem', padding: '2px 6px' }}
+          <button type="button" style={{ background: 'transparent', border: 'none', color: '#786d5e', cursor: 'pointer', fontSize: '0.75rem', padding: '2px 6px' }}
             onClick={() => setExpanded(e => !e)}>{expanded ? t('strategy.less') : t('strategy.edit')}</button>
           {total > 1 && (
-            <button type="button" style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 6, color: '#ef4444', cursor: 'pointer', padding: '2px 7px', fontSize: '0.75rem' }}
+            <button type="button" style={{ background: 'transparent', border: '1px solid #e2604e55', borderRadius: 6, color: '#e2604e', cursor: 'pointer', padding: '2px 7px', fontSize: '0.75rem' }}
               onClick={onRemove}>✕</button>
           )}
         </div>
         {expanded && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1f2937' }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #221e18' }}>
             {cond.kind === 'exit_condition' ? (
               <ExitConditionEditor cond={cond} onChange={onChange} />
             ) : (
@@ -498,11 +498,11 @@ function ConditionCard({ cond, onChange, onRemove, total, showCombiner, customIn
                   : <OperandEditor operand={cond.left} onChange={v => onChange({ ...cond, left: v })} label={t('strategy.leftSide')} isTimeSide={timeRight} />
                 }
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+                  <div style={{ flex: 1, height: 1, background: '#221e18' }} />
                   <select value={cond.operator} style={sStyle} onChange={e => onChange({ ...cond, operator: e.target.value })}>
                     {operators.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+                  <div style={{ flex: 1, height: 1, background: '#221e18' }} />
                 </div>
                 {cond.right?.type === 'custom'
                   ? <CustomOperandPanel operand={cond.right} onChange={v => onChange({ ...cond, right: v })} customIndicators={customIndicators} label="Right side" />
@@ -533,10 +533,10 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
   const removeCond = (id) => onChange({ ...rule, conditions: rule.conditions.filter(c => c._id !== id) });
 
   return (
-    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', background: '#0f172a', borderBottom: '1px solid #1f2937', flexWrap: 'wrap', flexShrink: 0 }}>
+    <div style={{ background: '#1a1715', border: '1px solid #221e18', borderRadius: 10, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', background: '#131110', borderBottom: '1px solid #221e18', flexWrap: 'wrap', flexShrink: 0 }}>
         <input value={rule.name} onChange={e => onChange({ ...rule, name: e.target.value })}
-          style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none' }} />
+          style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#ece5d6', fontSize: '1rem', fontWeight: 700, outline: 'none' }} />
         <select value={rule.role}
           style={{ ...sStyle, fontWeight: 700, color: role?.color, background: role?.bg, border: `1px solid ${role?.border}` }}
           onChange={e => onChange({ ...rule, role: e.target.value })}>
@@ -544,30 +544,30 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
         </select>
         {onDelete && (
           <button type="button" onClick={onDelete}
-            style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '5px 12px', fontSize: '0.78rem' }}>
+            style={{ background: 'transparent', border: '1px solid #e2604e55', borderRadius: 8, color: '#e2604e', cursor: 'pointer', padding: '5px 12px', fontSize: '0.78rem' }}>
             {t('common.delete')}
           </button>
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '10px 20px', background: '#0b1120', borderBottom: '1px solid #1f2937', flexWrap: 'wrap', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '10px 20px', background: '#131110', borderBottom: '1px solid #221e18', flexWrap: 'wrap', flexShrink: 0 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280' }}>{t('strategy.fire')}</span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e' }}>{t('strategy.fire')}</span>
           <select value={rule.timing} style={sStyle} onChange={e => onChange({ ...rule, timing: e.target.value })}>
             <option value="on_change">{t('strategy.onSignalChange')}</option>
             <option value="every_tick">{t('strategy.everyTick')}</option>
           </select>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280' }}>{t('strategy.quantity')}</span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e' }}>{t('strategy.quantity')}</span>
           <input type="number" value={rule.quantity} min={0.01} step={0.01} style={iStyle}
             onChange={e => onChange({ ...rule, quantity: parseFloat(e.target.value) || 1 })} />
         </label>
       </div>
 
       <div style={{ padding: '16px 20px' }}>
-        <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 12 }}>
-          {t('strategy.conditions')} {rule.conditions.length > 1 && <span style={{ color: '#4b5563', fontWeight: 400 }}>— {t('strategy.condCombiner')}</span>}
+        <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e', marginBottom: 12 }}>
+          {t('strategy.conditions')} {rule.conditions.length > 1 && <span style={{ color: '#5c5346', fontWeight: 400 }}>— {t('strategy.condCombiner')}</span>}
         </div>
 
         {rule.conditions.map((cond, idx) => (
@@ -584,38 +584,38 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
         <div style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button"
-              style={{ flex: 1, background: '#0f172a', border: '1px dashed #334155', borderRadius: 10, padding: '10px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor='#22d3ee'; e.currentTarget.style.color='#22d3ee'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor='#334155'; e.currentTarget.style.color='#9ca3af'; }}
+              style={{ flex: 1, background: '#131110', border: '1px dashed #322b21', borderRadius: 10, padding: '10px', color: '#a89c8a', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor='#f0a63c'; e.currentTarget.style.color='#f0a63c'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor='#322b21'; e.currentTarget.style.color='#a89c8a'; }}
               onClick={() => { setShowPicker(p=>!p); setPickerTab('signal'); }}>
               {t('strategy.signalCondition')}
             </button>
             <button type="button"
-              style={{ flex: 1, background: '#0f172a', border: '1px dashed #34d39955', borderRadius: 10, padding: '10px', color: '#34d39988', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.background='rgba(52,211,153,0.05)'; e.currentTarget.style.color='#34d399'; }}
-              onMouseLeave={e => { e.currentTarget.style.background='#0f172a'; e.currentTarget.style.color='#34d39988'; }}
+              style={{ flex: 1, background: '#131110', border: '1px dashed #58c48c55', borderRadius: 10, padding: '10px', color: '#58c48c88', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s' }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(88,196,140,0.05)'; e.currentTarget.style.color='#58c48c'; }}
+              onMouseLeave={e => { e.currentTarget.style.background='#131110'; e.currentTarget.style.color='#58c48c88'; }}
               onClick={() => { setShowPicker(p=>!p); setPickerTab('exit'); }}>
               {t('strategy.plExit')}
             </button>
             <button type="button"
-              style={{ background: '#0f172a', border: '1px dashed #334155', borderRadius: 10, padding: '10px 14px', color: '#6b7280', cursor: 'pointer', fontSize: '0.82rem' }}
+              style={{ background: '#131110', border: '1px dashed #322b21', borderRadius: 10, padding: '10px 14px', color: '#786d5e', cursor: 'pointer', fontSize: '0.82rem' }}
               onClick={addBlankCondition}>
               {t('strategy.blank')}
             </button>
           </div>
 
           {showPicker && (
-            <div style={{ background: '#0f172a', border: '1px solid #1f2937', borderRadius: 14, padding: '12px', marginTop: 8 }}>
+            <div style={{ background: '#131110', border: '1px solid #221e18', borderRadius: 10, padding: '12px', marginTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ display: 'flex', gap: 4, background: '#111827', borderRadius: 8, padding: 3 }}>
+                <div style={{ display: 'flex', gap: 4, background: '#1a1715', borderRadius: 8, padding: 3 }}>
                   {[{ id:'signal', label: t('strategy.pickerSignal') },{ id:'exit', label: t('strategy.pickerExit') }].map(tab => (
                     <button key={tab.id} type="button"
                       style={{ padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700,
-                        background: pickerTab===tab.id?'#1e293b':'transparent', color: pickerTab===tab.id?'#e5e7eb':'#6b7280' }}
+                        background: pickerTab===tab.id?'#262019':'transparent', color: pickerTab===tab.id?'#ece5d6':'#786d5e' }}
                       onClick={() => setPickerTab(tab.id)}>{tab.label}</button>
                   ))}
                 </div>
-                <button type="button" style={{ background:'transparent', border:'none', color:'#6b7280', cursor:'pointer', fontSize:'1.1rem' }} onClick={() => setShowPicker(false)}>✕</button>
+                <button type="button" style={{ background:'transparent', border:'none', color:'#786d5e', cursor:'pointer', fontSize:'1.1rem' }} onClick={() => setShowPicker(false)}>✕</button>
               </div>
 
               {pickerTab === 'signal' && signalBlocks.map(cat => (
@@ -624,13 +624,13 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
                   {cat.items.map(item => (
                     <div key={item.id}
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 3, transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background='#1f2937'}
+                      onMouseEnter={e => e.currentTarget.style.background='#221e18'}
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}
                       onClick={() => addCondFromBlock(item)}>
                       <span style={{ fontSize: '1rem' }}>{item.emoji}</span>
                       <div>
-                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#e5e7eb' }}>{item.label}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{item.desc}</div>
+                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#ece5d6' }}>{item.label}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#786d5e' }}>{item.desc}</div>
                       </div>
                     </div>
                   ))}
@@ -643,13 +643,13 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
                   {cat.items.map(item => (
                     <div key={item.id}
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 3, transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background='#1f2937'}
+                      onMouseEnter={e => e.currentTarget.style.background='#221e18'}
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}
                       onClick={() => addCondFromBlock(item)}>
                       <span style={{ fontSize: '1rem' }}>{item.emoji}</span>
                       <div>
-                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#e5e7eb' }}>{item.label}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{item.desc}</div>
+                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#ece5d6' }}>{item.label}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#786d5e' }}>{item.desc}</div>
                       </div>
                     </div>
                   ))}
@@ -658,17 +658,17 @@ function RuleEditor({ rule, onChange, onDelete, customIndicators }) {
 
               {pickerTab === 'signal' && customIndicators.length > 0 && (
                 <div>
-                  <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#22d3ee', marginBottom: 6 }}>{t('strategy.myCustomIndicators')}</div>
+                  <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#f0a63c', marginBottom: 6 }}>{t('strategy.myCustomIndicators')}</div>
                   {customIndicators.map(ind => (
                     <div key={ind.name}
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 3, transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background='#1f2937'}
+                      onMouseEnter={e => e.currentTarget.style.background='#221e18'}
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}
                       onClick={() => addCondFromBlock({ id: `custom_${ind.name}`, emoji: '🔷', label: ind.name, desc: ind.description || '', left: { type: 'custom', name: ind.name }, operator: '>', right: { type: 'constant', value: 0 } })}>
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: ind.color||'#22d3ee', display: 'inline-block', flexShrink: 0 }} />
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: ind.color||'#f0a63c', display: 'inline-block', flexShrink: 0 }} />
                       <div>
-                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#e5e7eb' }}>{ind.name}</div>
-                        {ind.description && <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{ind.description}</div>}
+                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#ece5d6' }}>{ind.name}</div>
+                        {ind.description && <div style={{ fontSize: '0.72rem', color: '#786d5e' }}>{ind.description}</div>}
                       </div>
                     </div>
                   ))}
@@ -821,13 +821,13 @@ export default function StrategyBuilder() {
   };
 
   const roleGroups = [
-    { label: t('strategy.entryLong'),  color: '#34d399', role: 'entry_long',  description: t('strategy.entryLongDesc') },
-    { label: t('strategy.exitLong'),   color: '#f87171', role: 'exit_long',   description: t('strategy.exitLongDesc') },
-    { label: t('strategy.entryShort'), color: '#fb923c', role: 'entry_short', description: t('strategy.entryShortDesc') },
-    { label: t('strategy.exitShort'),  color: '#a78bfa', role: 'exit_short',  description: t('strategy.exitShortDesc') },
+    { label: t('strategy.entryLong'),  color: '#58c48c', role: 'entry_long',  description: t('strategy.entryLongDesc') },
+    { label: t('strategy.exitLong'),   color: '#e87f6d', role: 'exit_long',   description: t('strategy.exitLongDesc') },
+    { label: t('strategy.entryShort'), color: '#e2884a', role: 'entry_short', description: t('strategy.entryShortDesc') },
+    { label: t('strategy.exitShort'),  color: '#a48fe0', role: 'exit_short',  description: t('strategy.exitShortDesc') },
   ];
 
-  const pillStyle = { border: '1px solid #334155', borderRadius: 999, padding: '6px 14px', background: '#0f172a', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.15s', outline: 'none', fontWeight: 500 };
+  const pillStyle = { border: '1px solid #322b21', borderRadius: 999, padding: '6px 14px', background: '#131110', color: '#a89c8a', cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.15s', outline: 'none', fontWeight: 500 };
 
   return (
     <div className="view">
@@ -848,27 +848,27 @@ export default function StrategyBuilder() {
       {mode === 'ai-strategy' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, minHeight: 600 }}>
           <AIStrategyChat onStrategyGenerated={handleStrategyGenerated} />
-          <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 12, padding: 16, overflow: 'auto' }}>
+          <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 8, padding: 16, overflow: 'auto' }}>
             {aiGeneratedStrategy ? (
               <>
                 <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontSize: '1rem', color: '#e5e7eb', marginBottom: 8 }}>{t('strategy.generatedStrategy')}</h3>
-                  <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: 12 }}>
-                    {t('strategy.name')}: <strong style={{ color: '#e5e7eb' }}>{aiGeneratedStrategy.name}</strong>
+                  <h3 style={{ fontSize: '1rem', color: '#ece5d6', marginBottom: 8 }}>{t('strategy.generatedStrategy')}</h3>
+                  <div style={{ fontSize: '0.85rem', color: '#a89c8a', marginBottom: 12 }}>
+                    {t('strategy.name')}: <strong style={{ color: '#ece5d6' }}>{aiGeneratedStrategy.name}</strong>
                   </div>
                   <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>
-                    {t('strategy.rules')}: <strong style={{ color: '#3b82f6' }}>{aiGeneratedStrategy.rules?.length || 0}</strong>
+                    {t('strategy.rules')}: <strong style={{ color: '#5f9fd6' }}>{aiGeneratedStrategy.rules?.length || 0}</strong>
                   </div>
                 </div>
                 {aiWarnings.length > 0 && (
-                  <div style={{ marginBottom: 16, padding: 12, background: 'rgba(245,158,11,0.08)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.3)' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#fbbf24', marginBottom: 8 }}>⚠️ Warnings:</div>
+                  <div style={{ marginBottom: 16, padding: 12, background: 'rgba(240,166,60,0.08)', borderRadius: 8, border: '1px solid rgba(240,166,60,0.3)' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f3c057', marginBottom: 8 }}>⚠️ Warnings:</div>
                     {aiWarnings.map((w, i) => (
-                      <div key={i} style={{ fontSize: '0.8rem', color: '#fcd34d', marginBottom: 4 }}>• {w}</div>
+                      <div key={i} style={{ fontSize: '0.8rem', color: '#f2c684', marginBottom: 4 }}>• {w}</div>
                     ))}
                   </div>
                 )}
-                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#93c5fd', fontSize: '0.7rem', overflow: 'auto', maxHeight: 260 }}>
+                <pre style={{ background: '#0c0a08', padding: 12, borderRadius: 8, color: '#f2c684', fontSize: '0.7rem', overflow: 'auto', maxHeight: 260 }}>
                   {JSON.stringify(aiGeneratedStrategy, null, 2)}
                 </pre>
                 <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
@@ -881,7 +881,7 @@ export default function StrategyBuilder() {
                 </button>
               </>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5c5346' }}>
                 {t('strategy.generatedWillAppear')}
               </div>
             )}
@@ -894,26 +894,26 @@ export default function StrategyBuilder() {
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '1.5rem 0 1rem', flexWrap: 'wrap' }}>
             <input value={ruleSetName} onChange={e => setRuleSetName(e.target.value)}
-              style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: '7px 14px', color: '#e5e7eb', fontSize: '1rem', fontWeight: 700, outline: 'none', minWidth: 160 }} />
-            <button type="button" style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
+              style={{ background: '#131110', border: '1px solid #322b21', borderRadius: 10, padding: '7px 14px', color: '#ece5d6', fontSize: '1rem', fontWeight: 700, outline: 'none', minWidth: 160 }} />
+            <button type="button" style={{ background: '#262019', border: '1px solid #322b21', borderRadius: 8, padding: '7px 14px', color: '#a89c8a', cursor: 'pointer', fontSize: '0.82rem' }}
               onClick={() => setShowJson(s=>!s)}>{showJson ? t('strategy.hideJson') : t('strategy.viewJson')}</button>
 
             {/* Load Strategy dropdown */}
             <div style={{ position: 'relative' }}>
               <button type="button"
-                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '7px 14px', color: '#9ca3af', cursor: 'pointer', fontSize: '0.82rem' }}
+                style={{ background: '#262019', border: '1px solid #322b21', borderRadius: 8, padding: '7px 14px', color: '#a89c8a', cursor: 'pointer', fontSize: '0.82rem' }}
                 onClick={() => setShowLoad(s => !s)}>
                 {t('strategy.loadStrategy')}
               </button>
               {showLoad && (
-                <div style={{ position: 'absolute', zIndex: 50, top: 'calc(100% + 4px)', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 12, padding: '6px', minWidth: 240, maxHeight: 320, overflowY: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.7)' }}>
-                  <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', padding: '4px 8px 8px' }}>{t('strategy.savedStrategies')}</div>
+                <div style={{ position: 'absolute', zIndex: 50, top: 'calc(100% + 4px)', left: 0, background: '#131110', border: '1px solid #221e18', borderRadius: 8, padding: '6px', minWidth: 240, maxHeight: 320, overflowY: 'auto', boxShadow: '0 16px 48px rgba(0,0,0,0.7)' }}>
+                  <div style={{ fontSize: '0.67rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#786d5e', padding: '4px 8px 8px' }}>{t('strategy.savedStrategies')}</div>
                   {savedStrategies.length === 0 ? (
-                    <div style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#4b5563' }}>{t('strategy.noStrategiesSaved')}</div>
+                    <div style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#5c5346' }}>{t('strategy.noStrategiesSaved')}</div>
                   ) : savedStrategies.map((s, i) => (
                     <div key={s.id ?? i}
-                      style={{ padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem', color: '#e5e7eb', transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                      style={{ padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem', color: '#ece5d6', transition: 'background 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#221e18'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       onClick={() => loadStrategy(s)}>
                       {s.name}
@@ -935,16 +935,16 @@ export default function StrategyBuilder() {
           </div>
 
           {rules.length === 0 ? (
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '3rem 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: '#4b5563', gap: 16, marginTop: '1.5rem' }}>
+            <div style={{ background: '#1a1715', border: '1px solid #221e18', borderRadius: 10, padding: '3rem 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: '#5c5346', gap: 16, marginTop: '1.5rem' }}>
               <span style={{ fontSize: '2.5rem' }}>◇</span>
               <span style={{ fontSize: '1rem' }}>{t('strategy.noRulesYet')}</span>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button type="button" onClick={() => addRule('entry_long')}
-                  style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#34d399,#22d3ee)', border: 'none', borderRadius: 8, color: '#0f172a', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                  style={{ padding: '8px 18px', background: '#f0a63c', border: 'none', borderRadius: 8, color: '#1a1206', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
                   {t('strategy.entryRule')}
                 </button>
                 <button type="button" onClick={() => addRule('exit_long')}
-                  style={{ padding: '8px 18px', background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#9ca3af', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  style={{ padding: '8px 18px', background: '#262019', border: '1px solid #322b21', borderRadius: 8, color: '#a89c8a', cursor: 'pointer', fontSize: '0.9rem' }}>
                   {t('strategy.exitRule')}
                 </button>
               </div>
@@ -956,8 +956,8 @@ export default function StrategyBuilder() {
           ))}
 
           {showJson && (
-            <div style={{ background: '#0b1120', border: '1px dashed #334155', borderRadius: 12, padding: '1rem', marginBottom: 16, overflow: 'auto' }}>
-              <pre style={{ margin: 0, fontSize: '0.75rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>{JSON.stringify(payload, null, 2)}</pre>
+            <div style={{ background: '#131110', border: '1px dashed #322b21', borderRadius: 8, padding: '1rem', marginBottom: 16, overflow: 'auto' }}>
+              <pre style={{ margin: 0, fontSize: '0.75rem', color: '#f2c684', fontFamily: 'ui-monospace, monospace' }}>{JSON.stringify(payload, null, 2)}</pre>
             </div>
           )}
 
@@ -970,9 +970,9 @@ export default function StrategyBuilder() {
                   onClick={() => { setSelectedRole(g.role); const first = rules.find(r => r.role === g.role); if(first) setActiveId(first._id); }}
                   style={{ 
                     ...pillStyle,
-                    background: selectedRole === g.role ? `${g.color}22` : '#0f172a',
-                    borderColor: selectedRole === g.role ? g.color : '#334155',
-                    color: selectedRole === g.role ? g.color : '#9ca3af',
+                    background: selectedRole === g.role ? `${g.color}22` : '#131110',
+                    borderColor: selectedRole === g.role ? g.color : '#322b21',
+                    color: selectedRole === g.role ? g.color : '#a89c8a',
                   }}>
                   {g.label} <span style={{ fontSize: '0.7rem', marginLeft: 6, opacity: 0.7 }}>({count})</span>
                 </button>
@@ -984,16 +984,16 @@ export default function StrategyBuilder() {
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
             {rulesForRole.length === 0 ? (
               <div style={{ 
-                background: '#111827', 
-                border: '1px solid #1f2937', 
-                borderRadius: 16, 
+                background: '#1a1715', 
+                border: '1px solid #221e18', 
+                borderRadius: 10, 
                 padding: '3rem 2rem',
                 display: 'flex', 
                 flexDirection: 'column', 
                 alignItems: 'center', 
                 justifyContent: 'center', 
                 minHeight: 300,
-                color: '#4b5563', 
+                color: '#5c5346', 
                 gap: 12 
               }}>
                 <span style={{ fontSize: '2.5rem' }}>◇</span>
@@ -1003,10 +1003,10 @@ export default function StrategyBuilder() {
                   style={{
                     marginTop: 12,
                     padding: '8px 16px',
-                    background: 'linear-gradient(135deg, #6366f1, #22d3ee)',
+                    background: '#f0a63c',
                     border: 'none',
                     borderRadius: 8,
-                    color: '#0f172a',
+                    color: '#131110',
                     fontWeight: 700,
                     cursor: 'pointer',
                     fontSize: '0.9rem'
@@ -1020,9 +1020,9 @@ export default function StrategyBuilder() {
                   <div key={r._id}>
                     {idx > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0' }}>
-                        <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
-                        <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#fb923c', padding: '2px 10px', background: 'rgba(251,146,60,0.1)', borderRadius: 999, border: '1px solid rgba(251,146,60,0.2)' }}>{t('strategy.orCombiner')}</span>
-                        <div style={{ flex: 1, height: 1, background: '#1f2937' }} />
+                        <div style={{ flex: 1, height: 1, background: '#221e18' }} />
+                        <span style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.1em', color: '#e2884a', padding: '2px 10px', background: 'rgba(226,136,74,0.1)', borderRadius: 999, border: '1px solid rgba(226,136,74,0.2)' }}>{t('strategy.orCombiner')}</span>
+                        <div style={{ flex: 1, height: 1, background: '#221e18' }} />
                       </div>
                     )}
                     <RuleEditor

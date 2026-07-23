@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
-const ACCENT = '#f59e0b'   // amber — distinct from strategy (blue) and indicator (purple) chats
+const ACCENT = '#f0a63c'   // amber — distinct from strategy (blue) and indicator (purple) chats
 
 // Temperature is fixed low for objective, analytical output
 const ANALYSIS_TEMPERATURE = 0.2
@@ -186,7 +186,7 @@ export default function Analyzer() {
                 onClick={() => selectItem(tab === 'strategies' ? 'strategy' : 'indicator', id, name)}
                 style={{
                   textAlign: 'left',
-                  background: isActive ? 'rgba(245,158,11,0.12)' : 'var(--surface)',
+                  background: isActive ? 'rgba(240,166,60,0.12)' : 'var(--surface)',
                   border: `1px solid ${isActive ? ACCENT : 'var(--border)'}`,
                   borderRadius: 8,
                   padding: '0.6rem 0.8rem',
@@ -242,7 +242,7 @@ export default function Analyzer() {
           {/* Model badge */}
           {modelName === undefined ? null : modelName ? (
             <span style={{
-              background: 'rgba(245,158,11,0.15)',
+              background: 'rgba(240,166,60,0.15)',
               color: ACCENT,
               border: `1px solid ${ACCENT}40`,
               borderRadius: 20,
@@ -254,9 +254,9 @@ export default function Analyzer() {
             </span>
           ) : (
             <span style={{
-              background: 'rgba(239,68,68,0.12)',
-              color: '#ef4444',
-              border: '1px solid #ef444440',
+              background: 'rgba(226,96,78,0.12)',
+              color: '#e2604e',
+              border: '1px solid #e2604e40',
               borderRadius: 20,
               padding: '0.2rem 0.7rem',
               fontSize: '0.75rem',
@@ -315,16 +315,16 @@ export default function Analyzer() {
                     padding: '0.65rem 0.9rem',
                     borderRadius: msg.role === 'user' ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
                     background: msg.isError
-                      ? 'rgba(239,68,68,0.15)'
+                      ? 'rgba(226,96,78,0.15)'
                       : msg.role === 'user'
                         ? ACCENT
                         : 'var(--panel2)',
-                    color: msg.isError ? '#ef4444' : msg.role === 'user' ? '#000' : 'var(--text)',
+                    color: msg.isError ? '#e2604e' : msg.role === 'user' ? '#1a1206' : 'var(--text)',
                     fontSize: '0.875rem',
                     lineHeight: 1.55,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
-                    border: msg.isError ? '1px solid #ef444430' : 'none',
+                    border: msg.isError ? '1px solid #e2604e30' : 'none',
                   }}>
                     {msg.content}
                   </div>
@@ -377,7 +377,7 @@ export default function Analyzer() {
                     transition: 'background 0.15s, border-color 0.15s',
                     whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={e => { if (!sending && modelName) e.currentTarget.style.background = `rgba(245,158,11,0.1)` }}
+                  onMouseEnter={e => { if (!sending && modelName) e.currentTarget.style.background = `rgba(240,166,60,0.1)` }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface)' }}
                 >
                   {prompt}
@@ -418,7 +418,7 @@ export default function Analyzer() {
                 disabled={sending || !input.trim() || !modelName}
                 style={{
                   background: sending || !input.trim() || !modelName ? 'var(--panel2)' : ACCENT,
-                  color: sending || !input.trim() || !modelName ? 'var(--text-mute)' : '#000',
+                  color: sending || !input.trim() || !modelName ? 'var(--text-mute)' : '#1a1206',
                   border: 'none',
                   borderRadius: 8,
                   padding: '0.55rem 1.1rem',

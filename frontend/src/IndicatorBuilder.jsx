@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 const BLOCKS = [
   {
     category: "Price Data",
-    color: "#22d3ee",
+    color: "#f0a63c",
     items: [
       { type: "operand", opType: "price", field: "close",  label: "Close Price",            desc: "The bar's closing price — the main price used by most indicators", emoji: "💰" },
       { type: "operand", opType: "price", field: "high",   label: "Bar High",               desc: "The highest price reached in the bar", emoji: "⬆️" },
@@ -20,14 +20,14 @@ const BLOCKS = [
   },
   {
     category: "Past Values",
-    color: "#f59e0b",
+    color: "#f0a63c",
     items: [
       { type: "operand", opType: "lookback", field: "close", period: 1,  label: "Price N bars ago",   desc: "The close price from N candles back — useful for detecting changes", emoji: "⏮️" },
     ]
   },
   {
     category: "Averages",
-    color: "#34d399",
+    color: "#58c48c",
     items: [
       { type: "operand", opType: "sma", field: "close", period: 20, label: "Simple Moving Average (SMA)", desc: "The plain average close price over the last N bars. Smooth, but slow to react.", emoji: "〰️" },
       { type: "operand", opType: "ema", field: "close", period: 20, label: "Exponential Moving Average (EMA)", desc: "Like SMA, but recent closes count more. Faster to react to changes.", emoji: "⚡" },
@@ -35,7 +35,7 @@ const BLOCKS = [
   },
   {
     category: "Momentum & Oscillators",
-    color: "#a78bfa",
+    color: "#a48fe0",
     items: [
       { type: "operand", opType: "rsi", field: "close", period: 14, label: "RSI (Relative Strength Index)", desc: "Measures how overbought or oversold an asset is. Ranges 0–100. Above 70 = overbought, below 30 = oversold.", emoji: "🔄" },
       { type: "operand", opType: "macd", fast: 12, slow: 26, signal: 9, component: "macd",   label: "MACD Line",         desc: "Shows the difference between two EMAs. Crossing zero signals trend changes.", emoji: "📡" },
@@ -45,7 +45,7 @@ const BLOCKS = [
   },
   {
     category: "Range & High/Low",
-    color: "#fb923c",
+    color: "#e2884a",
     items: [
       { type: "operand", opType: "highest_high", field: "high", period: 14, label: "Highest High (N bars)", desc: "The highest bar-high over the last N bars — used in Donchian channels, Williams %R, Stochastics", emoji: "🔝" },
       { type: "operand", opType: "lowest_low",   field: "low",  period: 14, label: "Lowest Low (N bars)",   desc: "The lowest bar-low over the last N bars — used in Donchian channels, Williams %R, Stochastics", emoji: "🔻" },
@@ -54,7 +54,7 @@ const BLOCKS = [
   },
   {
     category: "Volatility",
-    color: "#f472b6",
+    color: "#dd7f9f",
     items: [
       { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "upper",  label: "Bollinger Upper Band",  desc: "Price ceiling — asset is 'expensive' when near here", emoji: "⬆️" },
       { type: "operand", opType: "bollinger", field: "close", period: 20, std_dev: 2, component: "lower",  label: "Bollinger Lower Band",  desc: "Price floor — asset is 'cheap' when near here", emoji: "⬇️" },
@@ -65,7 +65,7 @@ const BLOCKS = [
   },
   {
     category: "Math",
-    color: "#6b7280",
+    color: "#786d5e",
     items: [
       { type: "const", value: 0,   label: "Fixed Number",       desc: "A constant number you set manually", emoji: "🔢" },
       { type: "binop", op: "+",    label: "Add  (A + B)",       desc: "Sum of two values", emoji: "➕" },
@@ -168,7 +168,7 @@ function BlockParams({ node, onChange }) {
   if (!node) return null;
   if (node.type === 'const') return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.value')}</span>
+      <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.value')}</span>
       <input type="number" value={node.value} style={inputStyle}
         onChange={e => onChange({ ...node, value: parseFloat(e.target.value) || 0 })} />
     </label>
@@ -180,7 +180,7 @@ function BlockParams({ node, onChange }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       {node.opType && ['price', 'lookback', 'sma', 'ema', 'rsi', 'bollinger', 'highest_high', 'lowest_low'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.priceType')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.priceType')}</span>
           <select value={node.field || 'close'} style={selectStyle} onChange={e => set('field', e.target.value)}>
             {PRICE_FIELDS.map(f => <option key={f}>{f}</option>)}
           </select>
@@ -188,49 +188,49 @@ function BlockParams({ node, onChange }) {
       )}
       {node.opType && ['lookback','sma','ema','rsi','bollinger','highest_high','lowest_low','atr'].includes(node.opType) && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.periodBars')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.periodBars')}</span>
           <input type="number" value={node.period || 14} min={1} style={inputStyle}
             onChange={e => set('period', parseInt(e.target.value) || 1)} />
         </label>
       )}
       {node.opType === 'bollinger' && <>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.stdDev')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.stdDev')}</span>
           <input type="number" value={node.std_dev || 2} min={0.1} step={0.1} style={inputStyle}
             onChange={e => set('std_dev', parseFloat(e.target.value) || 2)} />
         </label>
       </>}
       {node.opType === 'macd' && <>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.fast')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.fast')}</span>
           <input type="number" value={node.fast || 12} min={1} style={inputStyle}
             onChange={e => set('fast', parseInt(e.target.value) || 12)} />
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.slow')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.slow')}</span>
           <input type="number" value={node.slow || 26} min={1} style={inputStyle}
             onChange={e => set('slow', parseInt(e.target.value) || 26)} />
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{t('indicator.signal')}</span>
+          <span style={{ fontSize: '0.75rem', color: '#a89c8a' }}>{t('indicator.signal')}</span>
           <input type="number" value={node.signal || 9} min={1} style={inputStyle}
             onChange={e => set('signal', parseInt(e.target.value) || 9)} />
         </label>
       </>}
       {node.type === 'binop' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.left')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.left')}</span>
         <NodeMiniPicker node={node.left} onSet={v => onChange({ ...node, left: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.right')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.right')}</span>
         <NodeMiniPicker node={node.right} onSet={v => onChange({ ...node, right: v })} />
       </>}
       {node.type === 'unop' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.input')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.input')}</span>
         <NodeMiniPicker node={node.child} onSet={v => onChange({ ...node, child: v })} />
       </>}
       {node.type === 'ifelse' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.78rem', color: '#9ca3af', minWidth: 30 }}>{t('indicator.if')}</span>
+            <span style={{ fontSize: '0.78rem', color: '#a89c8a', minWidth: 30 }}>{t('indicator.if')}</span>
             <NodeMiniPicker node={node.cond_left}  onSet={v => onChange({ ...node, cond_left: v })} />
             <select value={node.cond_op || '>'} style={selectStyle}
               onChange={e => onChange({ ...node, cond_op: e.target.value })}>
@@ -239,21 +239,21 @@ function BlockParams({ node, onChange }) {
             <NodeMiniPicker node={node.cond_right} onSet={v => onChange({ ...node, cond_right: v })} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: '#34d399', minWidth: 30 }}>{t('indicator.then')}</span>
+            <span style={{ fontSize: '0.78rem', color: '#58c48c', minWidth: 30 }}>{t('indicator.then')}</span>
             <NodeMiniPicker node={node.then}  onSet={v => onChange({ ...node, then: v })} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: '#f87171', minWidth: 30 }}>{t('indicator.else')}</span>
+            <span style={{ fontSize: '0.78rem', color: '#e87f6d', minWidth: 30 }}>{t('indicator.else')}</span>
             <NodeMiniPicker node={node.else_} onSet={v => onChange({ ...node, else_: v })} />
           </div>
         </div>
       )}
       {node.type === 'clamp' && <>
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.value')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.value')}</span>
         <NodeMiniPicker node={node.value} onSet={v => onChange({ ...node, value: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.min')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.min')}</span>
         <NodeMiniPicker node={node.lo}    onSet={v => onChange({ ...node, lo: v })} />
-        <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{t('indicator.max')}</span>
+        <span style={{ fontSize: '0.78rem', color: '#a89c8a' }}>{t('indicator.max')}</span>
         <NodeMiniPicker node={node.hi}    onSet={v => onChange({ ...node, hi: v })} />
       </>}
     </div>
@@ -272,28 +272,28 @@ function NodeMiniPicker({ node, onSet }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
       {/* Type picker */}
       <div style={{ position: 'relative' }}>
-        <button style={{ ...pillStyle, fontSize: '0.72rem', padding: '3px 10px', background: '#1e293b' }}
+        <button style={{ ...pillStyle, fontSize: '0.72rem', padding: '3px 10px', background: '#262019' }}
           onClick={() => setOpen(o => !o)}>
           {describeNode(node)} ▾
         </button>
         {open && (
-          <div style={{ position: 'absolute', zIndex: 99, top: '100%', left: 0, background: '#0f172a', border: '1px solid #1f2937', borderRadius: 10, padding: 6, width: 260, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-            <div style={{ fontSize: '0.7rem', color: '#6b7280', padding: '2px 4px 6px' }}>{t('indicator.chooseBlock')}</div>
+          <div style={{ position: 'absolute', zIndex: 99, top: '100%', left: 0, background: '#131110', border: '1px solid #221e18', borderRadius: 10, padding: 6, width: 260, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: '0.7rem', color: '#786d5e', padding: '2px 4px 6px' }}>{t('indicator.chooseBlock')}</div>
             {allItems.map((item, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                onMouseEnter={e => e.currentTarget.style.background = '#221e18'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 onClick={() => { onSet(makeNode(item)); setOpen(false); }}>
                 <span>{item.emoji}</span>
-                <span style={{ color: '#e5e7eb' }}>{item.label}</span>
+                <span style={{ color: '#ece5d6' }}>{item.label}</span>
               </div>
             ))}
-            <div style={{ borderTop: '1px solid #1f2937', marginTop: 4, paddingTop: 4 }}>
+            <div style={{ borderTop: '1px solid #221e18', marginTop: 4, paddingTop: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#1f2937'}
+                onMouseEnter={e => e.currentTarget.style.background = '#221e18'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 onClick={() => { onSet(makeNode({ type: 'const', value: 0 })); setOpen(false); }}>
-                <span>🔢</span><span style={{ color: '#e5e7eb' }}>{t('indicator.fixedNumber')}</span>
+                <span>🔢</span><span style={{ color: '#ece5d6' }}>{t('indicator.fixedNumber')}</span>
               </div>
             </div>
           </div>
@@ -343,9 +343,9 @@ function NodeMiniPicker({ node, onSet }) {
   );
 }
 
-const inputStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '3px 8px', color: '#e5e7eb', fontSize: '0.85rem', width: 70 };
-const selectStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '3px 8px', color: '#e5e7eb', fontSize: '0.85rem' };
-const pillStyle = { background: '#1e293b', border: '1px solid #334155', borderRadius: 999, padding: '5px 14px', color: '#e5e7eb', fontSize: '0.8rem', cursor: 'pointer' };
+const inputStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 6, padding: '3px 8px', color: '#ece5d6', fontSize: '0.85rem', width: 70 };
+const selectStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 6, padding: '3px 8px', color: '#ece5d6', fontSize: '0.85rem' };
+const pillStyle = { background: '#262019', border: '1px solid #322b21', borderRadius: 999, padding: '5px 14px', color: '#ece5d6', fontSize: '0.8rem', cursor: 'pointer' };
 
 // ─── Group block — mini-canvas for parenthesised sub-expressions ──────────────
 function GroupBlock({ node, onUpdate, onRemove }) {
@@ -378,14 +378,14 @@ function GroupBlock({ node, onUpdate, onRemove }) {
   };
 
   return (
-    <div style={{ background: '#0b1120', border: '1px dashed #6366f1', borderRadius: 12, padding: '10px 14px', marginBottom: 4 }}>
+    <div style={{ background: '#131110', border: '1px dashed #a48fe0', borderRadius: 8, padding: '10px 14px', marginBottom: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: '1rem' }}>🔘</span>
-        <span style={{ flex: 1, fontWeight: 600, fontSize: '0.85rem', color: '#a5b4fc', fontFamily: 'ui-monospace, monospace' }}>
+        <span style={{ flex: 1, fontWeight: 600, fontSize: '0.85rem', color: '#c5b8ec', fontFamily: 'ui-monospace, monospace' }}>
           {describeNode(node)}
         </span>
         <button
-          style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 6, color: '#ef4444', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
+          style={{ background: 'transparent', border: '1px solid #e2604e55', borderRadius: 6, color: '#e2604e', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
           onClick={onRemove}>✕</button>
       </div>
       <DropZone onDrop={handleDrop} isEmpty={node.blocks.length === 0}>
@@ -393,7 +393,7 @@ function GroupBlock({ node, onUpdate, onRemove }) {
           <div key={b._id}>
             {idx > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
-                <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('indicator.combineWith')}</span>
+                <span style={{ fontSize: '0.72rem', color: '#5c5346' }}>{t('indicator.combineWith')}</span>
                 <select
                   value={(node.ops || [])[idx - 1] || '+'}
                   style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}
@@ -423,25 +423,25 @@ function PlacedBlock({ node, onUpdate, onRemove }) {
     if (node.type === 'unop')  return i.type === 'unop'  && i.op === node.op;
     return i.opType === node.opType && (!i.component || i.component === node.component);
   });
-  const color = template?.catColor ?? '#6b7280';
+  const color = template?.catColor ?? '#786d5e';
   const emoji = template?.emoji ?? '🔷';
   const label = template?.label ?? describeNode(node);
 
   return (
-    <div style={{ background: '#111827', border: `1px solid ${color}33`, borderRadius: 12, padding: '10px 14px', marginBottom: 8, transition: 'all 0.2s' }}>
+    <div style={{ background: '#1a1715', border: `1px solid ${color}33`, borderRadius: 8, padding: '10px 14px', marginBottom: 8, transition: 'all 0.2s' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: '1.1rem' }}>{emoji}</span>
-        <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem', color: '#e5e7eb' }}>{label}</span>
-        <button style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '0.8rem', padding: '2px 6px' }}
+        <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem', color: '#ece5d6' }}>{label}</span>
+        <button style={{ background: 'transparent', border: 'none', color: '#a89c8a', cursor: 'pointer', fontSize: '0.8rem', padding: '2px 6px' }}
           onClick={() => setExpanded(e => !e)}>
           {expanded ? t('indicator.lessLabel') : t('indicator.configure')}
         </button>
-        <button style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 6, color: '#ef4444', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
+        <button style={{ background: 'transparent', border: '1px solid #e2604e55', borderRadius: 6, color: '#e2604e', cursor: 'pointer', padding: '2px 7px', fontSize: '0.78rem' }}
           onClick={onRemove}>✕</button>
       </div>
       {expanded && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1f2937' }}>
-          {template?.desc && <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0 0 8px' }}>{template.desc}</p>}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #221e18' }}>
+          {template?.desc && <p style={{ fontSize: '0.78rem', color: '#786d5e', margin: '0 0 8px' }}>{template.desc}</p>}
           <BlockParams node={node} onChange={onUpdate} />
         </div>
       )}
@@ -460,14 +460,14 @@ function DropZone({ onDrop, children, isEmpty }) {
       onDrop={e => { e.preventDefault(); e.stopPropagation(); setOver(false); onDrop(e); }}
       style={{
         minHeight: isEmpty ? 100 : 'auto',
-        border: over ? '2px dashed #22d3ee' : '2px dashed transparent',
-        borderRadius: 12,
-        background: over ? 'rgba(34,211,238,0.05)' : 'transparent',
+        border: over ? '2px dashed #f0a63c' : '2px dashed transparent',
+        borderRadius: 8,
+        background: over ? 'rgba(240,166,60,0.05)' : 'transparent',
         transition: 'all 0.2s',
         padding: isEmpty ? '0' : '0',
       }}>
       {isEmpty && !over && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: '#374151', fontSize: '0.85rem', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: '#322b21', fontSize: '0.85rem', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontSize: '1.5rem' }}>🧩</span>
           <span>{t('indicator.dragBlocks')}</span>
         </div>
@@ -485,15 +485,15 @@ function PaletteItem({ item, catColor }) {
       onDragStart={e => e.dataTransfer.setData('block', JSON.stringify(item))}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px',
-        background: '#0f172a', border: `1px solid ${catColor}30`, borderRadius: 10,
+        background: '#131110', border: `1px solid ${catColor}30`, borderRadius: 10,
         cursor: 'grab', marginBottom: 6, transition: 'all 0.15s', userSelect: 'none',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.borderColor = catColor; }}
-      onMouseLeave={e => { e.currentTarget.style.background = '#0f172a'; e.currentTarget.style.borderColor = `${catColor}30`; }}>
+      onMouseEnter={e => { e.currentTarget.style.background = '#262019'; e.currentTarget.style.borderColor = catColor; }}
+      onMouseLeave={e => { e.currentTarget.style.background = '#131110'; e.currentTarget.style.borderColor = `${catColor}30`; }}>
       <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{item.emoji}</span>
       <div>
-        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#e5e7eb', lineHeight: 1.3 }}>{item.label}</div>
-        <div style={{ fontSize: '0.72rem', color: '#6b7280', lineHeight: 1.4, marginTop: 2 }}>{item.desc}</div>
+        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ece5d6', lineHeight: 1.3 }}>{item.label}</div>
+        <div style={{ fontSize: '0.72rem', color: '#786d5e', lineHeight: 1.4, marginTop: 2 }}>{item.desc}</div>
       </div>
     </div>
   );
@@ -532,7 +532,7 @@ export default function IndicatorBuilder() {
             id: ind.id,
             name: ind.name,
             description: wrapper.description || '',
-            color: wrapper.color || '#22d3ee',
+            color: wrapper.color || '#f0a63c',
             blocks: actualExpr ? [inflateNode(actualExpr)] : [],
             ops: [],
             is_builtin: ind.is_builtin || false,
@@ -548,7 +548,7 @@ export default function IndicatorBuilder() {
   const active = indicators.find(i => i._id === activeId);
 
   const addIndicator = () => {
-    const ind = { _id: String(_indId++), name: 'My Indicator', description: '', color: '#22d3ee', blocks: [], ops: [] };
+    const ind = { _id: String(_indId++), name: 'My Indicator', description: '', color: '#f0a63c', blocks: [], ops: [] };
     setIndicators(p => [...p, ind]);
     setActiveId(ind._id);
   };
@@ -564,7 +564,7 @@ export default function IndicatorBuilder() {
       _id: String(_indId++),
       name: aiGeneratedIndicator.name || 'AI Indicator',
       description: aiGeneratedIndicator.description || '',
-      color: aiGeneratedIndicator.color || '#22d3ee',
+      color: aiGeneratedIndicator.color || '#f0a63c',
       blocks: inflated,
       ops: [],
     };
@@ -626,7 +626,7 @@ export default function IndicatorBuilder() {
     finally { setSaving(false); }
   };
 
-  const COLORS = ['#22d3ee','#34d399','#a78bfa','#fb923c','#f472b6','#f59e0b','#38bdf8'];
+  const COLORS = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#9085e9','#e66767'];
   const filteredBlocks = BLOCKS.map(cat => ({
     ...cat,
     items: cat.items.filter(i => !filter || i.label.toLowerCase().includes(filter.toLowerCase()) || i.desc.toLowerCase().includes(filter.toLowerCase())),
@@ -654,12 +654,12 @@ export default function IndicatorBuilder() {
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <button style={{ ...pillStyle, background: 'linear-gradient(135deg,#6366f1,#22d3ee)', color: '#0f172a', fontWeight: 700, border: 'none' }} onClick={addIndicator}>
+        <button style={{ ...pillStyle, background: '#f0a63c', color: '#1a1206', fontWeight: 700, border: 'none' }} onClick={addIndicator}>
           {t('indicator.newIndicator')}
         </button>
         {indicators.map(ind => (
           <button key={ind._id}
-            style={{ ...pillStyle, background: ind._id === activeId ? ind.color + '22' : '#0f172a', borderColor: ind._id === activeId ? ind.color : '#334155', color: ind._id === activeId ? ind.color : '#9ca3af', display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{ ...pillStyle, background: ind._id === activeId ? ind.color + '22' : '#131110', borderColor: ind._id === activeId ? ind.color : '#322b21', color: ind._id === activeId ? ind.color : '#a89c8a', display: 'flex', alignItems: 'center', gap: 6 }}
             onClick={() => setActiveId(ind._id)}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: ind.color, display: 'inline-block' }} />
             {ind.name}
@@ -677,24 +677,24 @@ export default function IndicatorBuilder() {
       {mode === 'ai-indicator' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, minHeight: 600 }}>
           <AIIndicatorChat onIndicatorGenerated={handleIndicatorGenerated} />
-          <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 12, padding: 16, overflow: 'auto' }}>
+          <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 8, padding: 16, overflow: 'auto' }}>
             {aiGeneratedIndicator ? (
               <>
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: aiGeneratedIndicator.color || '#22d3ee', flexShrink: 0 }} />
-                    <h3 style={{ fontSize: '1rem', color: '#e5e7eb', margin: 0 }}>{aiGeneratedIndicator.name}</h3>
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: aiGeneratedIndicator.color || '#f0a63c', flexShrink: 0 }} />
+                    <h3 style={{ fontSize: '1rem', color: '#ece5d6', margin: 0 }}>{aiGeneratedIndicator.name}</h3>
                   </div>
                   {aiGeneratedIndicator.description && (
-                    <div style={{ fontSize: '0.82rem', color: '#9ca3af', marginBottom: 12 }}>{aiGeneratedIndicator.description}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#a89c8a', marginBottom: 12 }}>{aiGeneratedIndicator.description}</div>
                   )}
                   {aiGeneratedIndicator.expr && (
-                    <div style={{ background: '#0f172a', border: '1px dashed #334155', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: '0.78rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>
+                    <div style={{ background: '#131110', border: '1px dashed #322b21', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: '0.78rem', color: '#f2c684', fontFamily: 'ui-monospace, monospace' }}>
                       {describeNode(inflateNode(aiGeneratedIndicator.expr))}
                     </div>
                   )}
                 </div>
-                <pre style={{ background: '#000000', padding: 12, borderRadius: 8, color: '#6b7280', fontSize: '0.68rem', overflow: 'auto', maxHeight: 340, marginBottom: 12 }}>
+                <pre style={{ background: '#0c0a08', padding: 12, borderRadius: 8, color: '#786d5e', fontSize: '0.68rem', overflow: 'auto', maxHeight: 340, marginBottom: 12 }}>
                   {JSON.stringify(aiGeneratedIndicator.expr, null, 2)}
                 </pre>
                 <button className="btn btn-primary" style={{ width: '100%' }} onClick={addAiIndicator}>
@@ -702,7 +702,7 @@ export default function IndicatorBuilder() {
                 </button>
               </>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#5c5346' }}>
                 {t('indicator.generatedWillAppear')}
               </div>
             )}
@@ -713,14 +713,14 @@ export default function IndicatorBuilder() {
       {/* Manual Builder Mode */}
       {mode === 'build' && (
       <>
-      {loading ? <div style={{ color: '#6b7280', textAlign: 'center', padding: 40 }}>{t('common.loading')}</div> : (
+      {loading ? <div style={{ color: '#786d5e', textAlign: 'center', padding: 40 }}>{t('common.loading')}</div> : (
         <div className="ib2-wrap">
           {/* Palette */}
           <aside className="ib2-palette">
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1rem', overflow: 'hidden' }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 10 }}>{t('indicator.buildingBlocks')}</div>
+            <div style={{ background: '#1a1715', border: '1px solid #221e18', borderRadius: 10, padding: '1rem', overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#786d5e', marginBottom: 10 }}>{t('indicator.buildingBlocks')}</div>
               <input placeholder={t('indicator.searchBlocks')} value={filter} onChange={e => setFilter(e.target.value)}
-                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '6px 10px', color: '#e5e7eb', fontSize: '0.82rem', marginBottom: 12, outline: 'none' }} />
+                style={{ width: '100%', background: '#131110', border: '1px solid #322b21', borderRadius: 8, padding: '6px 10px', color: '#ece5d6', fontSize: '0.82rem', marginBottom: 12, outline: 'none' }} />
               {filteredBlocks.map(cat => (
                 <div key={cat.category} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: cat.color, marginBottom: 6 }}>{cat.category}</div>
@@ -733,23 +733,23 @@ export default function IndicatorBuilder() {
           {/* Canvas */}
           <div className="ib2-main">
             {!active ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#4b5563', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#5c5346', gap: 8 }}>
                 <span style={{ fontSize: '2rem' }}>🧩</span>
                 <span>{t('indicator.createNew')}</span>
               </div>
             ) : (
-              <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+              <div style={{ background: '#1a1715', border: '1px solid #221e18', borderRadius: 10, padding: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
                   <input
                     value={active.name}
                     onChange={e => updateActive({ ...active, name: e.target.value })}
-                    style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '1.1rem', fontWeight: 700, outline: 'none' }}
+                    style={{ flex: 1, minWidth: 120, background: 'transparent', border: 'none', color: '#ece5d6', fontSize: '1.1rem', fontWeight: 700, outline: 'none' }}
                     placeholder={t('indicator.indicatorName')} />
                   <div style={{ display: 'flex', gap: 5 }}>
                     {COLORS.map(c => (
                       <div key={c} onClick={() => updateActive({ ...active, color: c })}
-                        style={{ width: 18, height: 18, borderRadius: 4, background: c, cursor: 'pointer', border: active.color === c ? '2px solid #fff' : '2px solid transparent', transition: 'all 0.15s' }} />
+                        style={{ width: 18, height: 18, borderRadius: 4, background: c, cursor: 'pointer', border: active.color === c ? '2px solid #ece5d6' : '2px solid transparent', transition: 'all 0.15s' }} />
                     ))}
                   </div>
                   {!active.is_builtin && (
@@ -761,25 +761,25 @@ export default function IndicatorBuilder() {
                       }
                       deleteIndicator(active._id);
                     }}
-                      style={{ background: 'transparent', border: '1px solid #ef444455', borderRadius: 8, color: '#ef4444', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>{t('common.delete')}</button>
+                      style={{ background: 'transparent', border: '1px solid #e2604e55', borderRadius: 8, color: '#e2604e', cursor: 'pointer', padding: '4px 10px', fontSize: '0.78rem' }}>{t('common.delete')}</button>
                   )}
                   {active.is_builtin && (
-                    <span style={{ fontSize: '0.72rem', color: '#4b5563', border: '1px solid #1f2937', borderRadius: 8, padding: '4px 10px' }}>{t('common.builtin')}</span>
+                    <span style={{ fontSize: '0.72rem', color: '#5c5346', border: '1px solid #221e18', borderRadius: 8, padding: '4px 10px' }}>{t('common.builtin')}</span>
                   )}
                 </div>
 
                 <input
                   value={active.description}
                   onChange={e => updateActive({ ...active, description: e.target.value })}
-                  style={{ width: '100%', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: '7px 12px', color: '#9ca3af', fontSize: '0.85rem', outline: 'none', marginBottom: 16 }}
+                  style={{ width: '100%', background: '#131110', border: '1px solid #262019', borderRadius: 8, padding: '7px 12px', color: '#a89c8a', fontSize: '0.85rem', outline: 'none', marginBottom: 16 }}
                   placeholder={t('indicator.optionalDescription')} />
 
                 {/* Formula preview */}
                 {active.blocks.length > 0 && (
-                  <div style={{ background: '#0b1120', border: '1px dashed #334155', borderRadius: 10, padding: '8px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#93c5fd', fontFamily: 'ui-monospace, monospace' }}>
+                  <div style={{ background: '#131110', border: '1px dashed #322b21', borderRadius: 10, padding: '8px 14px', marginBottom: 14, fontSize: '0.8rem', color: '#f2c684', fontFamily: 'ui-monospace, monospace' }}>
                     {active.blocks.map((b, i) => (
                       <span key={b._id}>
-                        {i > 0 ? <span style={{ color: '#f59e0b' }}> {active.ops?.[i - 1] || '+'} </span> : null}
+                        {i > 0 ? <span style={{ color: '#f0a63c' }}> {active.ops?.[i - 1] || '+'} </span> : null}
                         {describeNode(b)}
                       </span>
                     ))}
@@ -792,7 +792,7 @@ export default function IndicatorBuilder() {
                     <div key={b._id}>
                       {idx > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
-                          <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('indicator.combineWith')}</span>
+                          <span style={{ fontSize: '0.72rem', color: '#5c5346' }}>{t('indicator.combineWith')}</span>
                           <select
                             value={active.ops?.[idx - 1] || '+'}
                             style={{ ...selectStyle, fontSize: '0.85rem', padding: '3px 8px', width: 56 }}

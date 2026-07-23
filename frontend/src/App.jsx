@@ -31,12 +31,12 @@ function UpdateBanner() {
 }
 
 const VIEW_IDS = [
-  { id: 'backtest',  tKey: 'nav.backtest',  icon: '▶' },
-  { id: 'analytics', tKey: 'nav.analytics', icon: '📈' },
-  { id: 'strategy',  tKey: 'nav.strategy',  icon: '⚙' },
-  { id: 'indicator', tKey: 'nav.indicator', icon: '📐' },
-  { id: 'analyzer',  tKey: 'nav.analyzer',  icon: '🔍' },
-  { id: 'keys',      tKey: 'nav.keys',      icon: '🔑' },
+  { id: 'backtest',  tKey: 'nav.backtest' },
+  { id: 'analytics', tKey: 'nav.analytics' },
+  { id: 'strategy',  tKey: 'nav.strategy' },
+  { id: 'indicator', tKey: 'nav.indicator' },
+  { id: 'analyzer',  tKey: 'nav.analyzer' },
+  { id: 'keys',      tKey: 'nav.keys' },
 ]
 
 const LANGS = ['en', 'et']
@@ -60,16 +60,16 @@ export default function App() {
       <UpdateBanner />
       <header className="app-topbar">
         <div className="app-logo">
-          <div className="app-logo-mark">📊</div>
+          <div className="app-logo-mark">❚❚</div>
           <span className="app-logo-text">{t('app.title')}</span>
-          {appVersion && <span style={{ fontSize: '0.7rem', color: 'var(--fg, #888)', opacity: 0.5, marginLeft: 4 }}>v{appVersion}</span>}
+          {appVersion && <span style={{ fontFamily: 'var(--mono)', fontSize: '0.66rem', color: 'var(--text-mute)', marginLeft: 4 }}>v{appVersion}</span>}
         </div>
         <nav className="app-nav">
           {VIEW_IDS.map(v => (
             <button key={v.id}
               className={`nav-btn${view === v.id ? ' active' : ''}`}
               onClick={() => setView(v.id)}>
-              <span style={{fontSize:'0.85rem'}}>{v.icon}</span>{t(v.tKey)}
+              {t(v.tKey)}
             </button>
           ))}
         </nav>
@@ -80,14 +80,17 @@ export default function App() {
               onClick={() => switchLang(lng)}
               style={{
                 padding: '3px 10px',
-                borderRadius: '999px',
+                borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
                 background: i18n.language === lng ? 'var(--accent)' : 'transparent',
-                color: i18n.language === lng ? '#fff' : 'var(--fg, #ccc)',
+                color: i18n.language === lng ? '#1a1206' : 'var(--text-mute)',
                 cursor: 'pointer',
-                fontSize: '0.75rem',
+                fontFamily: 'var(--disp)',
+                fontSize: '0.7rem',
                 fontWeight: 600,
-                lineHeight: 1.4,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                lineHeight: 1.5,
               }}
             >
               {t(`lang.${lng}`)}

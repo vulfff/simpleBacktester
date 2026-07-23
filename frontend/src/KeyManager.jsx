@@ -46,7 +46,7 @@ const AI_MODELS = [
   { id: 'gemini-2.5-flash-lite',        label: 'Gemini 2.5 Flash Lite',      provider: 'gemini',    providerLabel: 'Google',    desc: 'Fastest and cheapest stable Gemini.',                                           keyHint: 'Starts with AIza',    url: 'https://aistudio.google.com/app/apikey' },
 ];
 
-const PROVIDER_COLORS = { anthropic: '#f59e0b', openai: '#10b981', grok: '#8b5cf6', gemini: '#3b82f6' };
+const PROVIDER_COLORS = { anthropic: '#f0a63c', openai: '#41a873', grok: '#9678d8', gemini: '#5f9fd6' };
 
 /** Infer AI provider from API key prefix. Returns null if unrecognised. */
 function inferProviderFromKey(key) {
@@ -58,8 +58,8 @@ function inferProviderFromKey(key) {
   return null;
 }
 
-const sStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: '0.88rem', width: '100%', outline: 'none' };
-const iStyle = { background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: '0.88rem', width: '100%', outline: 'none', fontFamily: 'ui-monospace, monospace' };
+const sStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 8, padding: '8px 12px', color: '#ece5d6', fontSize: '0.88rem', width: '100%', outline: 'none' };
+const iStyle = { background: '#131110', border: '1px solid #322b21', borderRadius: 8, padding: '8px 12px', color: '#ece5d6', fontSize: '0.88rem', width: '100%', outline: 'none', fontFamily: 'ui-monospace, monospace' };
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -67,8 +67,8 @@ function ActiveDot({ active }) {
   return (
     <span style={{
       width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-      background: active ? '#34d399' : '#334155',
-      boxShadow: active ? '0 0 6px rgba(52,211,153,0.6)' : 'none',
+      background: active ? '#58c48c' : '#322b21',
+      boxShadow: active ? '0 0 6px rgba(88,196,140,0.6)' : 'none',
     }} />
   );
 }
@@ -79,53 +79,53 @@ function KeyRow({ label, sublabel, active, protected: isProtected, onActivate, o
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-      background: active ? 'rgba(52,211,153,0.05)' : '#0b1120',
-      border: `1px solid ${active ? 'rgba(52,211,153,0.25)' : '#1e293b'}`,
+      background: active ? 'rgba(88,196,140,0.05)' : '#131110',
+      border: `1px solid ${active ? 'rgba(88,196,140,0.25)' : '#262019'}`,
       borderRadius: 8, marginBottom: 6,
     }}>
       <ActiveDot active={active} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '0.87rem', fontWeight: 600, color: active ? '#e2e8f0' : '#94a3b8' }}>{label}</span>
+          <span style={{ fontSize: '0.87rem', fontWeight: 600, color: active ? '#ece5d6' : '#a89c8a' }}>{label}</span>
           {isProtected ? (
             <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999,
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+              background: 'rgba(226,96,78,0.1)', border: '1px solid rgba(226,96,78,0.3)', color: '#e87f6d' }}>
               PW
             </span>
           ) : (
             <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999,
-              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+              background: 'rgba(164,143,224,0.1)', border: '1px solid rgba(164,143,224,0.3)', color: '#c5b8ec' }}>
               OS
             </span>
           )}
         </div>
-        {sublabel && <div style={{ fontSize: '0.72rem', color: '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sublabel}</div>}
+        {sublabel && <div style={{ fontSize: '0.72rem', color: '#5c5346', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sublabel}</div>}
       </div>
       {active ? (
         <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-          background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399' }}>
+          background: 'rgba(88,196,140,0.12)', border: '1px solid rgba(88,196,140,0.3)', color: '#58c48c' }}>
           {t('common.active')}
         </span>
       ) : (
         <button onClick={onActivate}
-          style={{ fontSize: '0.75rem', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)',
-            borderRadius: 6, color: '#93c5fd', cursor: 'pointer', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+          style={{ fontSize: '0.75rem', background: 'rgba(95,159,214,0.1)', border: '1px solid rgba(95,159,214,0.3)',
+            borderRadius: 6, color: '#f2c684', cursor: 'pointer', padding: '3px 10px', whiteSpace: 'nowrap' }}>
           {t('common.useThis')}
         </button>
       )}
       {confirmDel ? (
         <>
           <button onClick={onDelete}
-            style={{ fontSize: '0.72rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
-              borderRadius: 6, color: '#f87171', cursor: 'pointer', padding: '3px 8px' }}>{t('common.confirm')}</button>
+            style={{ fontSize: '0.72rem', background: 'rgba(226,96,78,0.15)', border: '1px solid rgba(226,96,78,0.4)',
+              borderRadius: 6, color: '#e87f6d', cursor: 'pointer', padding: '3px 8px' }}>{t('common.confirm')}</button>
           <button onClick={() => setConfirmDel(false)}
-            style={{ fontSize: '0.72rem', background: 'transparent', border: '1px solid #334155',
-              borderRadius: 6, color: '#6b7280', cursor: 'pointer', padding: '3px 8px' }}>{t('common.cancel')}</button>
+            style={{ fontSize: '0.72rem', background: 'transparent', border: '1px solid #322b21',
+              borderRadius: 6, color: '#786d5e', cursor: 'pointer', padding: '3px 8px' }}>{t('common.cancel')}</button>
         </>
       ) : (
         <button onClick={() => setConfirmDel(true)}
-          style={{ fontSize: '0.72rem', background: 'transparent', border: '1px solid #1e293b',
-            borderRadius: 6, color: '#4b5563', cursor: 'pointer', padding: '3px 8px', lineHeight: 1 }}>×</button>
+          style={{ fontSize: '0.72rem', background: 'transparent', border: '1px solid #262019',
+            borderRadius: 6, color: '#5c5346', cursor: 'pointer', padding: '3px 8px', lineHeight: 1 }}>×</button>
       )}
     </div>
   );
@@ -192,18 +192,18 @@ function DataProviderPanel() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>{t('keys.dataProvidersTitle')}</h3>
-        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('keys.saved', { count: keys.length })}</span>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#ece5d6' }}>{t('keys.dataProvidersTitle')}</h3>
+        <span style={{ fontSize: '0.72rem', color: '#5c5346' }}>{t('keys.saved', { count: keys.length })}</span>
       </div>
-      <p style={{ fontSize: '0.83rem', color: '#6b7280', margin: '0 0 16px' }}>
+      <p style={{ fontSize: '0.83rem', color: '#786d5e', margin: '0 0 16px' }}>
         {t('keys.dataProvidersDesc')}
       </p>
 
       {/* Saved key list */}
       {loading ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
+        <div style={{ color: '#5c5346', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
       ) : keys.length === 0 ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '10px 14px', background: '#0b1120', borderRadius: 8, marginBottom: 16, border: '1px dashed #1e293b' }}>
+        <div style={{ color: '#5c5346', fontSize: '0.83rem', padding: '10px 14px', background: '#131110', borderRadius: 8, marginBottom: 16, border: '1px dashed #262019' }}>
           {t('keys.noDataKeys')}
         </div>
       ) : (
@@ -224,42 +224,42 @@ function DataProviderPanel() {
       )}
 
       {/* Add new key form */}
-      <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '14px' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
+      <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 10, padding: '14px' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#786d5e', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.provider')}</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.provider')}</label>
           <select value={service} style={sStyle} onChange={e => setService(e.target.value)}>
             <option value="">{t('keys.selectProvider')}</option>
             {DATA_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
           {provider && (
-            <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#6b7280', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#786d5e', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <span>📊 {provider.assets}</span>
               <span>⚡ {provider.rateLimits}</span>
               {provider.url && (
                 <a href={provider.url} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#22d3ee', textDecoration: 'none' }}>{t('keys.getKey')}</a>
+                  style={{ color: '#f0a63c', textDecoration: 'none' }}>{t('keys.getKey')}</a>
               )}
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
           <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
             style={iStyle} placeholder={provider?.keyHint || t('keys.pasteApiKey')} autoComplete="off" />
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.labelOptional')}</span></label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#5c5346' }}>{t('keys.labelOptional')}</span></label>
           <input value={label} onChange={e => setLabel(e.target.value)}
             style={sStyle} placeholder={t('keys.labelPlaceholder')} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: protect ? 10 : 14 }}>
           <input type="checkbox" id="dp-protect" checked={protect} onChange={e => setProtect(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="dp-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
+          <label htmlFor="dp-protect" style={{ fontSize: '0.83rem', color: '#a89c8a', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
         </div>
         {protect && (
           <div style={{ marginBottom: 14 }}>
@@ -268,10 +268,10 @@ function DataProviderPanel() {
           </div>
         )}
 
-        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 7, padding: '7px 12px', color: '#fca5a5', fontSize: '0.82rem', marginBottom: 10 }}>{error}</div>}
+        {error && <div style={{ background: 'rgba(226,96,78,0.1)', border: '1px solid rgba(226,96,78,0.3)', borderRadius: 7, padding: '7px 12px', color: '#f0a99b', fontSize: '0.82rem', marginBottom: 10 }}>{error}</div>}
 
         <button onClick={save} disabled={saving}
-          style={{ background: saving ? '#1e293b' : 'linear-gradient(135deg,#6366f1,#22d3ee)', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#0f172a', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
+          style={{ background: saving ? '#262019' : '#f0a63c', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#1a1206', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
           {saving ? t('common.saving') : t('keys.saveAndActivate')}
         </button>
       </div>
@@ -363,25 +363,25 @@ function AIModelPanel() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e7eb' }}>{t('keys.aiModelsTitle')}</h3>
-        <span style={{ fontSize: '0.72rem', color: '#4b5563' }}>{t('keys.saved', { count: keys.length })}</span>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#ece5d6' }}>{t('keys.aiModelsTitle')}</h3>
+        <span style={{ fontSize: '0.72rem', color: '#5c5346' }}>{t('keys.saved', { count: keys.length })}</span>
       </div>
-      <p style={{ fontSize: '0.83rem', color: '#6b7280', margin: '0 0 16px' }}>
+      <p style={{ fontSize: '0.83rem', color: '#786d5e', margin: '0 0 16px' }}>
         {t('keys.aiModelsDesc')}
       </p>
 
       {/* Saved key list */}
       {loading ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
+        <div style={{ color: '#5c5346', fontSize: '0.83rem', padding: '12px 0' }}>{t('common.loading')}</div>
       ) : keys.length === 0 ? (
-        <div style={{ color: '#4b5563', fontSize: '0.83rem', padding: '10px 14px', background: '#0b1120', borderRadius: 8, marginBottom: 16, border: '1px dashed #1e293b' }}>
+        <div style={{ color: '#5c5346', fontSize: '0.83rem', padding: '10px 14px', background: '#131110', borderRadius: 8, marginBottom: 16, border: '1px dashed #262019' }}>
           {t('keys.noAiKeys')}
         </div>
       ) : (
         <div style={{ marginBottom: 16 }}>
           {keys.map(k => {
             const meta = AI_MODELS.find(m => m.id === k.model_name);
-            const provColor = PROVIDER_COLORS[k.provider] || '#6b7280';
+            const provColor = PROVIDER_COLORS[k.provider] || '#786d5e';
             return (
               <KeyRow key={k.id}
                 label={meta?.label || k.model_name}
@@ -401,11 +401,11 @@ function AIModelPanel() {
       )}
 
       {/* Add new key form */}
-      <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '14px' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
+      <div style={{ background: '#131110', border: '1px solid #262019', borderRadius: 10, padding: '14px' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#786d5e', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('keys.addNew')}</div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.model')}</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.model')}</label>
           <select value={modelName} style={sStyle} onChange={e => { setModelName(e.target.value); setCustomModelId(''); }}>
             <option value="">{t('keys.selectModel')}</option>
             {Object.entries(byProvider).map(([prov, models]) => (
@@ -424,23 +424,23 @@ function AIModelPanel() {
                 placeholder="e.g. gpt-5, claude-opus-5-0, grok-4 …"
                 autoComplete="off"
               />
-              <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#4b5563' }}>
+              <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#5c5346' }}>
                 Provider will be inferred from the API key prefix you paste below.
               </div>
             </div>
           )}
           {selectedModel && (
-            <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#6b7280', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span style={{ color: PROVIDER_COLORS[selectedModel.provider] || '#6b7280', fontWeight: 600 }}>{selectedModel.providerLabel}</span>
+            <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#786d5e', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ color: PROVIDER_COLORS[selectedModel.provider] || '#786d5e', fontWeight: 600 }}>{selectedModel.providerLabel}</span>
               <span>{selectedModel.desc}</span>
               <a href={selectedModel.url} target="_blank" rel="noopener noreferrer"
-                style={{ color: '#a78bfa', textDecoration: 'none', whiteSpace: 'nowrap' }}>{t('keys.getKey')}</a>
+                style={{ color: '#a48fe0', textDecoration: 'none', whiteSpace: 'nowrap' }}>{t('keys.getKey')}</a>
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.apiKey')}</label>
           <input type="password" value={apiKey}
             onChange={e => {
               const val = e.target.value;
@@ -480,22 +480,22 @@ function AIModelPanel() {
               }}
               disabled={fetching}
               style={{
-                fontSize: '0.74rem', background: 'rgba(99,102,241,0.1)',
-                border: '1px solid rgba(99,102,241,0.35)', borderRadius: 6,
-                color: '#a5b4fc', cursor: fetching ? 'not-allowed' : 'pointer',
+                fontSize: '0.74rem', background: 'rgba(164,143,224,0.1)',
+                border: '1px solid rgba(164,143,224,0.35)', borderRadius: 6,
+                color: '#c5b8ec', cursor: fetching ? 'not-allowed' : 'pointer',
                 padding: '3px 12px', opacity: fetching ? 0.6 : 1,
               }}>
               {fetching ? t('keys.fetchingModels') : t('keys.fetchModels')}
             </button>
-            {fetchError && <span style={{ fontSize: '0.72rem', color: '#f87171' }}>{fetchError}</span>}
+            {fetchError && <span style={{ fontSize: '0.72rem', color: '#e87f6d' }}>{fetchError}</span>}
           </div>
         )}
 
         {/* Live model list fetched from provider API */}
         {fetchedModels.length > 0 && (
           <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>
-              {t('keys.modelsOnAccount')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.modelsFound', { count: fetchedModels.length })}</span>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>
+              {t('keys.modelsOnAccount')} <span style={{ fontWeight: 400, color: '#5c5346' }}>{t('keys.modelsFound', { count: fetchedModels.length })}</span>
             </label>
             <select value={modelName} style={sStyle} onChange={e => { setModelName(e.target.value); setCustomModelId(''); }}>
               <option value="">{t('keys.selectAModel')}</option>
@@ -505,21 +505,21 @@ function AIModelPanel() {
               })}
               <option value="__custom__">— Enter custom model ID —</option>
             </select>
-            <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#4b5563' }}>
+            <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#5c5346' }}>
               {t('keys.fetchedLive')}
             </div>
           </div>
         )}
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#4b5563' }}>{t('keys.labelOptional')}</span></label>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a89c8a', display: 'block', marginBottom: 5 }}>{t('keys.label')} <span style={{ fontWeight: 400, color: '#5c5346' }}>{t('keys.labelOptional')}</span></label>
           <input value={label} onChange={e => setLabel(e.target.value)}
             style={sStyle} placeholder={t('keys.labelPlaceholder')} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: protect ? 10 : 14 }}>
           <input type="checkbox" id="ai-protect" checked={protect} onChange={e => setProtect(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="ai-protect" style={{ fontSize: '0.83rem', color: '#9ca3af', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
+          <label htmlFor="ai-protect" style={{ fontSize: '0.83rem', color: '#a89c8a', cursor: 'pointer' }}>{t('keys.encryptWithPassword')}</label>
         </div>
         {protect && (
           <div style={{ marginBottom: 14 }}>
@@ -528,10 +528,10 @@ function AIModelPanel() {
           </div>
         )}
 
-        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 7, padding: '7px 12px', color: '#fca5a5', fontSize: '0.82rem', marginBottom: 10 }}>{error}</div>}
+        {error && <div style={{ background: 'rgba(226,96,78,0.1)', border: '1px solid rgba(226,96,78,0.3)', borderRadius: 7, padding: '7px 12px', color: '#f0a99b', fontSize: '0.82rem', marginBottom: 10 }}>{error}</div>}
 
         <button onClick={save} disabled={saving}
-          style={{ background: saving ? '#1e293b' : 'linear-gradient(135deg,#a78bfa,#22d3ee)', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#0f172a', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
+          style={{ background: saving ? '#262019' : '#f0a63c', border: 'none', borderRadius: 999, padding: '8px 20px', color: '#1a1206', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.87rem', opacity: saving ? 0.7 : 1 }}>
           {saving ? t('common.saving') : t('keys.saveAndActivate')}
         </button>
       </div>
@@ -555,23 +555,23 @@ export default function KeyManager() {
       <h2>{t('keys.title')}</h2>
       <p>{t('keys.subtitle')}</p>
 
-      <div style={{ display: 'flex', gap: 10, margin: '1.5rem 0', background: '#0f172a', padding: 6, borderRadius: 14, border: '1px solid #1f2937', width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: 10, margin: '1.5rem 0', background: '#131110', padding: 6, borderRadius: 10, border: '1px solid #221e18', width: 'fit-content' }}>
         {tabs.map(tb => (
           <button key={tb.id} onClick={() => setTab(tb.id)}
             style={{
-              background: tab === tb.id ? '#1e293b' : 'transparent',
-              border: tab === tb.id ? '1px solid #334155' : '1px solid transparent',
+              background: tab === tb.id ? '#262019' : 'transparent',
+              border: tab === tb.id ? '1px solid #322b21' : '1px solid transparent',
               borderRadius: 10, padding: '8px 18px', cursor: 'pointer',
-              color: tab === tb.id ? '#e5e7eb' : '#6b7280', fontSize: '0.87rem', fontWeight: tab === tb.id ? 700 : 400,
+              color: tab === tb.id ? '#ece5d6' : '#786d5e', fontSize: '0.87rem', fontWeight: tab === tb.id ? 700 : 400,
               transition: 'all 0.2s',
             }}>
             {tb.label}
-            <div style={{ fontSize: '0.67rem', color: tab === tb.id ? '#9ca3af' : '#4b5563', fontWeight: 400 }}>{tb.desc}</div>
+            <div style={{ fontSize: '0.67rem', color: tab === tb.id ? '#a89c8a' : '#5c5346', fontWeight: 400 }}>{tb.desc}</div>
           </button>
         ))}
       </div>
 
-      <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 16, padding: '1.5rem', maxWidth: 580 }}>
+      <div style={{ background: '#1a1715', border: '1px solid #221e18', borderRadius: 10, padding: '1.5rem', maxWidth: 580 }}>
         {tab === 'data' && <DataProviderPanel />}
         {tab === 'ai'   && <AIModelPanel />}
       </div>
