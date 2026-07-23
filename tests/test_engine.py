@@ -9,7 +9,6 @@ from engine import BacktestEngine
 from fill_model import FillModel
 from portfolio import Portfolio
 from strategy import create_strategy
-import strategy_rules  # noqa: F401 — registers rule_set
 
 
 def _csv_path(rows: list[str]) -> str:

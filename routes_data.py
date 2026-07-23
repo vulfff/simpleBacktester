@@ -66,8 +66,6 @@ async def _fetch_from_provider(service, api_key, ticker, start_date, end_date, t
             return await _yahoo_fetch(client, ticker, start_date, end_date, timeframe)
         elif service == "finnhub":
             return await _finnhub_fetch(client, api_key, ticker, start_date, end_date, timeframe)
-        elif service == "iex-cloud":
-            return await _iex_fetch(client, api_key, ticker, timeframe)
         elif service == "massive":
             return await _massive_fetch(client, api_key, ticker, start_date, end_date, timeframe)
         else:
@@ -174,20 +172,6 @@ async def _finnhub_fetch(client, api_key, ticker, start_date, end_date, timefram
     return rows
 
 
-async def _iex_fetch(client, api_key, ticker, timeframe):
-    TF_MAP = {"1d": "1m", "5d": "5d", "1m": "1mm", "3m": "3m", "6m": "6m", "1y": "1y"}
-    rng = TF_MAP.get(timeframe, "1m")
-    r = await client.get(f"https://cloud.iexapis.com/stable/stock/{ticker}/chart/{rng}", params={"token": api_key})
-    r.raise_for_status()
-    rows = []
-    for b in r.json():
-        ts = b.get("date", "") + (" " + b.get("minute", "") if b.get("minute") else "")
-        c = float(b.get("close") or b.get("average") or 0)
-        rows.append({"timestamp": ts.strip(), "open": float(b.get("open") or c), "high": float(b.get("high") or c),
-                      "low": float(b.get("low") or c), "close": c, "volume": float(b.get("volume") or 0), "symbol": ticker})
-    return rows
-
-
 async def _massive_fetch(client, api_key, ticker, start_date, end_date, timeframe):
     TF_MAP = {"1m": ("1", "minute"), "5m": ("5", "minute"), "15m": ("15", "minute"),
               "30m": ("30", "minute"), "1h": ("1", "hour"), "4h": ("4", "hour"),
@@ -257,10 +241,5 @@ async def _search_tickers(client, service, api_key, q):
         r = await client.get("https://finnhub.io/api/v1/search", params={"q": q, "token": api_key})
         r.raise_for_status()
         return [{"symbol": m.get("symbol", ""), "name": m.get("description", "")} for m in r.json().get("result", [])]
-    elif service == "iex-cloud":
-        r = await client.get(f"https://cloud.iexapis.com/stable/search/{q}", params={"token": api_key})
-        r.raise_for_status()
-        results = r.json() if isinstance(r.json(), list) else []
-        return [{"symbol": m.get("symbol", ""), "name": m.get("securityName", "")} for m in results]
     else:
         raise HTTPException(400, f"Ticker search not supported for provider: {service!r}")

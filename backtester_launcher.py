@@ -215,7 +215,6 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p.add_argument("--port", type=int, default=0, help="loopback port (0 = auto)")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
     p.add_argument("--no-tray", action="store_true", help="do not register a tray icon (CI/test)")
-    p.add_argument("--dev", action="store_true", help="dev mode (verbose logging)")
     return p.parse_args(argv)
 
 

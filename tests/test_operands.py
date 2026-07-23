@@ -16,6 +16,7 @@ from tickdata import TickData
 from strategy_rules import (
     PriceSeries,
     PriceField,
+    Operand,
     SMAOperand,
     EMAOperand,
     RSIOperand,
@@ -28,6 +29,7 @@ from strategy_rules import (
     LowestLowOperand,
     LookbackOperand,
     TypicalPriceOperand,
+    TimeOfDayOperand,
     ConstantOperand,
     PriceOperand,
     _parse_price_field,
@@ -625,3 +627,116 @@ class TestPriceFieldBackwardCompat:
 
     def test_close_unchanged(self):
         assert _parse_price_field("close") == PriceField.CLOSE
+
+
+# ---------------------------------------------------------------------------
+# TestOperandSerialisation — exact to_dict wire format (byte-identical guard)
+# ---------------------------------------------------------------------------
+
+class TestOperandSerialisation:
+    """Locks the JSON wire format after the generic to_dict/_from_dict refactor.
+    These dicts are stored in SQLite and round-tripped by the frontend, so the
+    keys, key ORDER, and value types must not drift."""
+
+    def test_constant_to_dict(self):
+        assert ConstantOperand(value_=42.0).to_dict() == {"type": "constant", "value": 42.0}
+
+    def test_price_to_dict(self):
+        assert PriceOperand(field=PriceField.HIGH).to_dict() == {"type": "price", "field": "high"}
+
+    def test_lookback_to_dict(self):
+        assert LookbackOperand(field=PriceField.CLOSE, period=3).to_dict() == \
+            {"type": "lookback", "field": "close", "period": 3}
+
+    def test_sma_to_dict(self):
+        assert SMAOperand(field=PriceField.CLOSE, period=20).to_dict() == \
+            {"type": "sma", "field": "close", "period": 20}
+
+    def test_ema_to_dict(self):
+        assert EMAOperand(field=PriceField.CLOSE, period=10).to_dict() == \
+            {"type": "ema", "field": "close", "period": 10}
+
+    def test_rsi_to_dict(self):
+        assert RSIOperand(field=PriceField.CLOSE, period=14).to_dict() == \
+            {"type": "rsi", "field": "close", "period": 14}
+
+    def test_bollinger_to_dict(self):
+        assert BollingerOperand(field=PriceField.CLOSE, period=20, std_dev=2.0,
+                                component=BollingerComponent.UPPER).to_dict() == \
+            {"type": "bollinger", "field": "close", "period": 20,
+             "std_dev": 2.0, "component": "upper"}
+
+    def test_macd_to_dict(self):
+        assert MACDOperand(fast=12, slow=26, signal=9,
+                           component=MACDComponent.MACD).to_dict() == \
+            {"type": "macd", "fast": 12, "slow": 26, "signal": 9, "component": "macd"}
+
+    def test_highest_high_to_dict(self):
+        assert HighestHighOperand(field=PriceField.HIGH, period=14).to_dict() == \
+            {"type": "highest_high", "field": "high", "period": 14}
+
+    def test_lowest_low_to_dict(self):
+        assert LowestLowOperand(field=PriceField.LOW, period=14).to_dict() == \
+            {"type": "lowest_low", "field": "low", "period": 14}
+
+    def test_atr_to_dict(self):
+        assert ATROperand(period=14).to_dict() == {"type": "atr", "period": 14}
+
+    def test_typical_price_to_dict(self):
+        assert TypicalPriceOperand().to_dict() == {"type": "typical_price"}
+
+    def test_time_of_day_to_dict(self):
+        assert TimeOfDayOperand().to_dict() == {"type": "time_of_day"}
+
+    def test_key_order_preserved(self):
+        # Key ORDER must match the historical hand-written serialisers exactly.
+        assert list(BollingerOperand().to_dict().keys()) == \
+            ["type", "field", "period", "std_dev", "component"]
+        assert list(MACDOperand().to_dict().keys()) == \
+            ["type", "fast", "slow", "signal", "component"]
+
+    def test_constant_field_key_strips_trailing_underscore(self):
+        # dataclass field is value_ but the wire key must be "value"
+        d = ConstantOperand(value_=7.0).to_dict()
+        assert "value" in d and "value_" not in d
+
+    def test_round_trip_all_operands(self):
+        specimens = [
+            ConstantOperand(value_=1.5),
+            PriceOperand(field=PriceField.VOLUME),
+            LookbackOperand(field=PriceField.HIGH, period=2),
+            SMAOperand(period=5),
+            EMAOperand(period=8),
+            RSIOperand(period=14),
+            BollingerOperand(period=20, std_dev=2.5, component=BollingerComponent.PCT_B),
+            MACDOperand(fast=5, slow=13, signal=4, component=MACDComponent.HIST),
+            HighestHighOperand(period=10),
+            LowestLowOperand(period=10),
+            ATROperand(period=7),
+            TypicalPriceOperand(),
+            TimeOfDayOperand(),
+        ]
+        for op in specimens:
+            d = op.to_dict()
+            rebuilt = Operand.from_dict(d)
+            assert type(rebuilt) is type(op)
+            assert rebuilt.to_dict() == d, f"round-trip mismatch for {op!r}"
+
+    def test_from_dict_coerces_value_types(self):
+        # period given as float string-free number, std_dev as int → coerced to int/float
+        op = Operand.from_dict({"type": "bollinger", "field": "close",
+                                "period": 20.0, "std_dev": 2, "component": "lower"})
+        assert op.period == 20 and isinstance(op.period, int)
+        assert op.std_dev == 2.0 and isinstance(op.std_dev, float)
+        assert op.component is BollingerComponent.LOWER
+
+    def test_from_dict_missing_field_uses_dataclass_default(self):
+        # Historically SMA/EMA/RSI required "field"/"period"; now they fall back
+        # to dataclass defaults (intentional leniency of the generic parser).
+        op = Operand.from_dict({"type": "sma"})
+        assert op.field == PriceField.CLOSE
+        assert op.period == 20
+
+    def test_from_dict_legacy_bid_field_maps_to_close(self):
+        op = Operand.from_dict({"type": "sma", "field": "bid", "period": 5})
+        assert op.field == PriceField.CLOSE

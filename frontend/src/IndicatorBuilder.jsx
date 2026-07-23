@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AIIndicatorChat } from './AIIndicatorChat';
+import { AIIndicatorChat } from './AIChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 

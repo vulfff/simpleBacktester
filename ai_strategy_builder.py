@@ -13,9 +13,9 @@ Configuration stored in database model_api_keys table:
 - key_data: base64-encoded or Fernet-encrypted API key
 
 Usage:
-    from ai_strategy_builder import get_ai_provider
+    from ai_strategy_builder import AnthropicProvider
 
-    provider = get_ai_provider()  # Reads from database
+    provider = AnthropicProvider(api_key=..., model_name="claude-sonnet-4-6")
     strategy = provider.build_from_prompt(
         user_prompt="Buy when EMA crosses above SMA"
     )
@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import json
 import re
-import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from dataclasses import dataclass
 
 
@@ -518,12 +517,7 @@ class AIProvider(ABC):
         self.api_key = api_key
         self.model_name = model_name
 
-    # ── Abstract: each subclass implements the raw HTTP call ─────────────────
-
-    @abstractmethod
-    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
-        """Make API call and return raw text response."""
-        pass
+    # ── Abstract: each subclass implements the raw multi-turn HTTP call ──────
 
     @abstractmethod
     def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
@@ -535,6 +529,14 @@ class AIProvider(ABC):
             temperature: Creativity (0.0–1.0)
         """
         pass
+
+    # ── Concrete: single-turn convenience over the multi-turn call ───────────
+
+    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
+        """Make a single-turn API call and return raw text response."""
+        return self._call_api_multi(
+            [{"role": "user", "content": user_prompt}], system_prompt, temperature
+        )
 
     # ── Public: strategy builder convenience ─────────────────────────────────
 
@@ -636,21 +638,6 @@ class AIProvider(ABC):
 
         return text
 
-    # ── Strategy-specific response parsing ───────────────────────────────────
-
-    def _parse_response(self, text: str) -> Dict[str, Any]:
-        """Parse and validate a strategy JSON response."""
-        strategy = self._extract_json(text)
-
-        if not isinstance(strategy, dict):
-            raise ValueError("Response must be a JSON object")
-        if "name" not in strategy or "rules" not in strategy:
-            raise ValueError("Strategy must contain 'name' and 'rules' fields")
-        if not isinstance(strategy["rules"], list):
-            raise ValueError("'rules' must be a list")
-
-        return strategy
-
     def validate_strategy(self, strategy: Dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate strategy structure and return warnings."""
         warnings = []
@@ -705,43 +692,6 @@ class AnthropicProvider(AIProvider):
 
     BASE_URL = "https://api.anthropic.com/v1/messages"
 
-    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
-        """Call Anthropic Messages API and return raw text."""
-        import httpx
-
-        payload: Dict[str, Any] = {
-            "model": self.model_name,
-            "max_tokens": 4096,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-            "temperature": temperature,
-        }
-
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.post(
-                    self.BASE_URL,
-                    headers={
-                        "x-api-key": self.api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
-            data = resp.json()
-            if data.get("stop_reason") == "max_tokens":
-                raise ValueError(
-                    "AI response was truncated (max_tokens reached). "
-                    "Try a shorter/simpler description."
-                )
-            return data["content"][0]["text"].strip()
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Anthropic API error: {e}")
-
     def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
         import httpx
         payload: Dict[str, Any] = {
@@ -765,6 +715,11 @@ class AnthropicProvider(AIProvider):
             if resp.status_code != 200:
                 raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
             data = resp.json()
+            if data.get("stop_reason") == "max_tokens":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
             return data["content"][0]["text"].strip()
         except ValueError:
             raise
@@ -780,30 +735,33 @@ class OpenAIProvider(AIProvider):
     """OpenAI Chat Completions API provider (REST)."""
 
     BASE_URL = "https://api.openai.com/v1/chat/completions"
+    # Token-limit parameter name and error label are overridable by subclasses
+    # (e.g. GrokProvider) that speak the same Chat Completions schema.
+    TOKEN_LIMIT_PARAM = "max_completion_tokens"
+    ERROR_LABEL = "OpenAI API error"
 
-    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
-        """Call OpenAI Chat Completions API and return raw text."""
+    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
         import httpx
-
         # o1/o3/o4 reasoning models don't accept temperature or a system role message
         is_reasoning = self.model_name.startswith(("o1", "o3", "o4"))
-
-        messages = []
+        full_msgs: list = []
         if not is_reasoning:
-            messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": user_prompt})
-        else:
-            # Embed system instructions in the user turn for reasoning models
-            messages.append({"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"})
-
+            full_msgs.append({"role": "system", "content": system_prompt})
+        full_msgs += [{"role": m["role"], "content": m["content"]} for m in messages]
+        if is_reasoning and system_prompt:
+            # Reasoning models reject a system role message, so fold the system
+            # prompt into the first user turn instead of silently dropping it.
+            for msg in full_msgs:
+                if msg["role"] == "user":
+                    msg["content"] = f"{system_prompt}\n\n{msg['content']}"
+                    break
         payload: Dict[str, Any] = {
             "model": self.model_name,
-            "max_completion_tokens": 4096,
-            "messages": messages,
+            self.TOKEN_LIMIT_PARAM: 4096,
+            "messages": full_msgs,
         }
         if not is_reasoning:
             payload["temperature"] = temperature
-
         try:
             with httpx.Client(timeout=120.0) as client:
                 resp = client.post(
@@ -826,117 +784,25 @@ class OpenAIProvider(AIProvider):
         except ValueError:
             raise
         except Exception as e:
-            raise ValueError(f"OpenAI API error: {e}")
-
-    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
-        import httpx
-        is_reasoning = self.model_name.startswith(("o1", "o3", "o4"))
-        full_msgs: list = []
-        if not is_reasoning:
-            full_msgs.append({"role": "system", "content": system_prompt})
-        full_msgs += [{"role": m["role"], "content": m["content"]} for m in messages]
-        payload: Dict[str, Any] = {
-            "model": self.model_name,
-            "max_completion_tokens": 4096,
-            "messages": full_msgs,
-        }
-        if not is_reasoning:
-            payload["temperature"] = temperature
-        try:
-            with httpx.Client(timeout=120.0) as client:
-                resp = client.post(
-                    self.BASE_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"OpenAI API error: {e}")
+            raise ValueError(f"{self.ERROR_LABEL}: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Grok Provider (xAI) — OpenAI-compatible REST endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
-class GrokProvider(AIProvider):
-    """xAI Grok API provider (OpenAI-compatible REST)."""
+class GrokProvider(OpenAIProvider):
+    """xAI Grok API provider — OpenAI-compatible Chat Completions schema.
+
+    Only the endpoint URL, the token-limit parameter name, and the error label
+    differ from OpenAI. Grok model names never start with o1/o3/o4, so the
+    inherited reasoning-model branch stays inert: temperature is always sent
+    and max_tokens is used.
+    """
 
     BASE_URL = "https://api.x.ai/v1/chat/completions"
-
-    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
-        """Call xAI Grok API and return raw text."""
-        import httpx
-
-        payload: Dict[str, Any] = {
-            "model": self.model_name,
-            "max_tokens": 4096,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": temperature,
-        }
-
-        try:
-            with httpx.Client(timeout=120.0) as client:
-                resp = client.post(
-                    self.BASE_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
-            data = resp.json()
-            if data["choices"][0].get("finish_reason") == "length":
-                raise ValueError(
-                    "AI response was truncated (max_tokens reached). "
-                    "Try a shorter/simpler description."
-                )
-            return data["choices"][0]["message"]["content"].strip()
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Grok API error: {e}")
-
-    def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
-        import httpx
-        full_msgs = [{"role": "system", "content": system_prompt}]
-        full_msgs += [{"role": m["role"], "content": m["content"]} for m in messages]
-        payload: Dict[str, Any] = {
-            "model": self.model_name,
-            "max_tokens": 4096,
-            "messages": full_msgs,
-            "temperature": temperature,
-        }
-        try:
-            with httpx.Client(timeout=120.0) as client:
-                resp = client.post(
-                    self.BASE_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Grok API error: {e}")
+    TOKEN_LIMIT_PARAM = "max_tokens"
+    ERROR_LABEL = "Grok API error"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -947,49 +813,6 @@ class GeminiProvider(AIProvider):
     """Google Gemini generateContent API provider (REST)."""
 
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-    def _call_api(self, user_prompt: str, system_prompt: str, temperature: float) -> str:
-        """Call Google Gemini generateContent API and return raw text."""
-        import httpx
-
-        url = self.BASE_URL.format(model=self.model_name)
-        payload: Dict[str, Any] = {
-            "systemInstruction": {
-                "parts": [{"text": system_prompt}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_prompt}],
-                }
-            ],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": 4096,
-            },
-        }
-
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.post(
-                    url,
-                    params={"key": self.api_key},
-                    headers={"Content-Type": "application/json"},
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
-            data = resp.json()
-            if data["candidates"][0].get("finishReason") == "MAX_TOKENS":
-                raise ValueError(
-                    "AI response was truncated (max_tokens reached). "
-                    "Try a shorter/simpler description."
-                )
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Gemini API error: {e}")
 
     def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
         import httpx
@@ -1020,102 +843,13 @@ class GeminiProvider(AIProvider):
             if resp.status_code != 200:
                 raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
             data = resp.json()
+            if data["candidates"][0].get("finishReason") == "MAX_TOKENS":
+                raise ValueError(
+                    "AI response was truncated (max_tokens reached). "
+                    "Try a shorter/simpler description."
+                )
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except ValueError:
             raise
         except Exception as e:
             raise ValueError(f"Gemini API error: {e}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Factory Function
-# ─────────────────────────────────────────────────────────────────────────────
-
-def get_ai_provider(
-    provider: Optional[str] = None,
-    api_key: Optional[str] = None,
-    model_name: Optional[str] = None
-) -> AIProvider:
-    """
-    Get an AI provider instance.
-
-    Reads from database if no arguments provided.
-
-    Args:
-        provider: "anthropic", "openai", "grok", or "gemini"
-        api_key: API key for the provider
-        model_name: Model name to use
-
-    Returns:
-        Configured AIProvider instance
-    """
-    # If not provided, read from database
-    if provider is None or api_key is None:
-        import base64
-        from db import get_active_model_key, _infer_provider
-
-        key_rec = get_active_model_key()
-        if not key_rec:
-            raise ValueError(
-                "No AI provider configured in database. "
-                "Use the Key Manager frontend to set up an LLM provider."
-            )
-
-        model_name   = model_name or key_rec["model_name"]
-        provider     = provider or key_rec.get("provider") or _infer_provider(model_name)
-        enc_key      = key_rec["key_data"] or ""
-        is_protected = bool(key_rec["protected"])
-
-        if is_protected:
-            raise ValueError(
-                "LLM API key is encrypted. "
-                "Please provide the password via the AI chat interface."
-            )
-        else:
-            try:
-                api_key = base64.b64decode(enc_key).decode().strip()
-            except Exception:
-                api_key = enc_key.strip()
-
-    # Validate inputs
-    if not provider or not api_key or not model_name:
-        raise ValueError("provider, api_key, and model_name are required")
-
-    provider = provider.lower().strip()
-
-    # Provider mapping
-    PROVIDERS = {
-        "anthropic": AnthropicProvider,
-        "openai": OpenAIProvider,
-        "grok": GrokProvider,
-        "gemini": GeminiProvider,
-    }
-
-    ProviderClass = PROVIDERS.get(provider)
-    if not ProviderClass:
-        raise ValueError(
-            f"Unknown provider: {provider}. "
-            f"Supported: {', '.join(PROVIDERS.keys())}"
-        )
-
-    return ProviderClass(api_key=api_key, model_name=model_name)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Convenience Functions
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_strategy_from_prompt(user_prompt: str) -> Dict[str, Any]:
-    """
-    Build a strategy from a prompt using configured provider.
-
-    Reads provider config from database.
-
-    Args:
-        user_prompt: Natural language strategy description
-
-    Returns:
-        Strategy JSON dictionary
-    """
-    provider = get_ai_provider()
-    return provider.build_from_prompt(user_prompt)

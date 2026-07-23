@@ -354,8 +354,6 @@ def _rows_to_csv(rows: List[Dict]) -> bytes:
 
 
 def _resolve_strategy(cfg: Dict[str, Any]):
-    import strategy_rules  # noqa: F401
-
     raw_config = cfg.get("config", {})
     if isinstance(raw_config, str):
         try:
@@ -366,8 +364,7 @@ def _resolve_strategy(cfg: Dict[str, Any]):
     logic = (cfg.get("logic") or "").strip()
     name  = (cfg.get("name")  or "").strip()
 
-    from strategy import STRATEGY_REGISTRY
-    all_names = set(STRATEGY_REGISTRY.keys())
+    all_names = {"rule_set"}  # the only strategy engine identifier create_strategy() accepts
 
     if "rule_set" in raw_config:
         return "rule_set", raw_config

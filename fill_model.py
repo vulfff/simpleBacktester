@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional
 
-from events import OrderEvent, FillEvent
+from events import OrderEvent
 from tickdata import TickData
 
 

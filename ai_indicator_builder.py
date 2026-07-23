@@ -11,18 +11,17 @@ Supports all standard technical indicators and mathematical operations:
 
 Usage:
     from ai_indicator_builder import build_indicator_from_prompt
-    
+
     indicator = build_indicator_from_prompt(
-        user_prompt="RSI oversold: RSI(14) when it drops below 30"
+        user_prompt="RSI oversold: RSI(14) when it drops below 30",
+        provider=provider,  # a configured AIProvider instance
     )
     print(indicator)  # Valid indicator expression JSON
 """
 
 from __future__ import annotations
 
-import json
-import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 INDICATOR_SYSTEM_PROMPT = """You are an expert technical analysis specialist. Your task is to convert natural language descriptions of trading indicators into valid JSON expression tree structures.
 
@@ -296,23 +295,19 @@ The JSON must include:
 """
 
 
-def build_indicator_from_prompt(user_prompt: str, provider=None, language_directive: str = "") -> Dict[str, Any]:
+def build_indicator_from_prompt(user_prompt: str, provider, language_directive: str = "") -> Dict[str, Any]:
     """
-    Build an indicator expression from natural language using configured AI provider.
+    Build an indicator expression from natural language using the given AI provider.
 
     Args:
         user_prompt: Natural language indicator description
-        provider: Optional pre-configured provider. If None, reads from database.
+        provider: A configured AIProvider instance used to call the model.
         language_directive: Optional suffix appended to the system prompt instructing
             the model which natural language to respond in (for name/description prose).
 
     Returns:
         Dictionary with name, description, expr, and color
     """
-    if provider is None:
-        from ai_strategy_builder import get_ai_provider
-        provider = get_ai_provider()
-
     try:
         # Call the API with the indicator-specific system prompt.
         # Uses _call_api directly so we get raw text without strategy validation.

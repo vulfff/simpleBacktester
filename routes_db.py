@@ -8,14 +8,15 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, Request
 
 from db import (
-    get_db_conn, db_conn, encrypt_with_password, decrypt_with_password,
-    save_run, list_runs, get_run, delete_run, delete_all_runs, delete_runs_batch,
+    db_conn, encrypt_with_password,
+    list_runs, get_run, delete_run, delete_all_runs, delete_runs_batch,
     list_data_keys, save_data_key, activate_data_key, delete_data_key,
-    get_active_data_key, get_data_key_by_id, update_data_key_data,
+    get_data_key_by_id, update_data_key_data,
     list_model_keys, save_model_key, activate_model_key, delete_model_key,
-    get_active_model_key, get_model_key_by_id, update_model_key_data,
+    get_model_key_by_id, update_model_key_data,
     _infer_provider,
 )
+from indicator_registry import extract_editable_params
 
 router = APIRouter()
 
@@ -65,33 +66,6 @@ async def db_delete_runs_batch(request: Request):
             pass
     count = delete_runs_batch(ids)
     return {"status": "ok", "deleted": count}
-
-
-# ── Encryption helpers ────────────────────────────────────────────────────────
-
-@router.post("/keys/encrypt")
-def keys_encrypt(payload: Dict[str, str]):
-    pwd = payload.get("password", "")
-    if not pwd:
-        raise HTTPException(400, "Password required.")
-    return {
-        "dataKey":  encrypt_with_password(pwd, payload.get("dataKey",  "")),
-        "modelKey": encrypt_with_password(pwd, payload.get("modelKey", "")),
-    }
-
-
-@router.post("/keys/decrypt")
-def keys_decrypt(payload: Dict[str, str]):
-    pwd = payload.get("password", "")
-    if not pwd:
-        raise HTTPException(400, "Password required.")
-    try:
-        return {
-            "dataKey":  decrypt_with_password(pwd, payload.get("dataKey",  "")),
-            "modelKey": decrypt_with_password(pwd, payload.get("modelKey", "")),
-        }
-    except ValueError:
-        raise HTTPException(400, "Decryption failed — wrong password?")
 
 
 # ── Strategy DB ───────────────────────────────────────────────────────────────
@@ -168,6 +142,13 @@ def db_get_indicators():
             except (json.JSONDecodeError, TypeError):
                 d["expr"] = None
             d["is_builtin"] = bool(d.get("is_builtin", 0))
+            # d["expr"] is the stored wrapper {"expr": <tree>, "description": ..., "color": ...};
+            # extract_editable_params needs the actual tree, not the wrapper.
+            tree = d["expr"].get("expr") if isinstance(d["expr"], dict) else None
+            try:
+                d["editable_params"] = extract_editable_params(tree) if isinstance(tree, dict) else []
+            except (KeyError, TypeError, AttributeError):
+                d["editable_params"] = []
             rows.append(d)
     return {"indicators": rows}
 
@@ -197,139 +178,124 @@ def db_post_indicators(payload: Dict[str, List[Dict[str, Any]]]):
 
 
 # ── Multi-key CRUD endpoints ──────────────────────────────────────────────────
+# Shared implementations for the data-keys/model-keys pairs below. `kind` is
+# always the internal literal "data" or "model" — never user input.
 
-@router.get("/db/data-keys")
-def db_get_data_keys():
-    return {"keys": list_data_keys()}
+_KEY_KIND: Dict[str, Dict[str, Any]] = {
+    "data": {
+        "label": "Data key", "list": list_data_keys, "save": save_data_key,
+        "activate": activate_data_key, "delete": delete_data_key,
+        "get": get_data_key_by_id, "update": update_data_key_data,
+    },
+    "model": {
+        "label": "Model key", "list": list_model_keys, "save": save_model_key,
+        "activate": activate_model_key, "delete": delete_model_key,
+        "get": get_model_key_by_id, "update": update_model_key_data,
+    },
+}
 
 
-@router.post("/db/data-keys")
-async def db_post_data_key(request: Request):
+def _list_keys(kind: str):
+    return {"keys": _KEY_KIND[kind]["list"]()}
+
+
+async def _post_key(kind: str, request: Request):
     _keyring, _KEYRING_AVAILABLE, _KC_SERVICE, _KC_DATA_PREFIX, _KC_MODEL_PREFIX = _keyring_refs()
+    prefix = _KC_DATA_PREFIX if kind == "data" else _KC_MODEL_PREFIX
+    spec = _KEY_KIND[kind]
+
     payload   = await request.json()
-    service   = payload.get("service", "").strip()
     raw_key   = payload.get("key", "").strip()
     protected = bool(payload.get("protected", False))
     password  = payload.get("password", "")
     label     = payload.get("label", "").strip()
     activate  = bool(payload.get("activate", True))
 
-    if not service:
-        raise HTTPException(400, "service is required")
+    if kind == "data":
+        name_values = (payload.get("service", "").strip(),)
+        if not name_values[0]:
+            raise HTTPException(400, "service is required")
+    else:
+        model_name = payload.get("model_name", "").strip()
+        if not model_name:
+            raise HTTPException(400, "model_name is required")
+        name_values = (model_name, payload.get("provider", "").strip() or _infer_provider(model_name))
 
     if protected:
         if not password:
             raise HTTPException(400, "password required for encryption")
         key_data = encrypt_with_password(password, raw_key)
-        key_id = save_data_key(service, key_data, protected, label, activate)
+        key_id = spec["save"](*name_values, key_data, protected, label, activate)
     else:
-        key_id = save_data_key(service, "keychain", False, label, activate)
+        key_id = spec["save"](*name_values, "keychain", False, label, activate)
         if _KEYRING_AVAILABLE and _keyring is not None:
             try:
-                _keyring.set_password(_KC_SERVICE, f"{_KC_DATA_PREFIX}{key_id}", raw_key)
+                _keyring.set_password(_KC_SERVICE, f"{prefix}{key_id}", raw_key)
             except Exception as exc:
                 raise HTTPException(500, f"Failed to store key in OS keychain: {exc}")
         else:
-            update_data_key_data(key_id, base64.b64encode(raw_key.encode()).decode())
+            spec["update"](key_id, base64.b64encode(raw_key.encode()).decode())
 
     return {"id": key_id, "status": "ok"}
+
+
+def _activate_key(kind: str, key_id: int):
+    if not _KEY_KIND[kind]["activate"](key_id):
+        raise HTTPException(404, f"{_KEY_KIND[kind]['label']} {key_id} not found")
+    return {"status": "ok"}
+
+
+def _delete_key(kind: str, key_id: int):
+    _keyring, _KEYRING_AVAILABLE, _KC_SERVICE, _KC_DATA_PREFIX, _KC_MODEL_PREFIX = _keyring_refs()
+    prefix = _KC_DATA_PREFIX if kind == "data" else _KC_MODEL_PREFIX
+    spec = _KEY_KIND[kind]
+    rec = spec["get"](key_id)
+    if not rec:
+        raise HTTPException(404, f"{spec['label']} {key_id} not found")
+    if not rec["protected"] and rec["key_data"] == "keychain" and _KEYRING_AVAILABLE and _keyring is not None:
+        try:
+            _keyring.delete_password(_KC_SERVICE, f"{prefix}{key_id}")
+        except Exception:
+            pass
+    spec["delete"](key_id)
+    return {"status": "ok"}
+
+
+@router.get("/db/data-keys")
+def db_get_data_keys():
+    return _list_keys("data")
+
+
+@router.post("/db/data-keys")
+async def db_post_data_key(request: Request):
+    return await _post_key("data", request)
 
 
 @router.post("/db/data-keys/{key_id}/activate")
 def db_activate_data_key(key_id: int):
-    if not activate_data_key(key_id):
-        raise HTTPException(404, f"Data key {key_id} not found")
-    return {"status": "ok"}
+    return _activate_key("data", key_id)
 
 
 @router.delete("/db/data-keys/{key_id}")
 def db_delete_data_key(key_id: int):
-    _keyring, _KEYRING_AVAILABLE, _KC_SERVICE, _KC_DATA_PREFIX, _KC_MODEL_PREFIX = _keyring_refs()
-    rec = get_data_key_by_id(key_id)
-    if not rec:
-        raise HTTPException(404, f"Data key {key_id} not found")
-    if not rec["protected"] and rec["key_data"] == "keychain" and _KEYRING_AVAILABLE and _keyring is not None:
-        try:
-            _keyring.delete_password(_KC_SERVICE, f"{_KC_DATA_PREFIX}{key_id}")
-        except Exception:
-            pass
-    delete_data_key(key_id)
-    return {"status": "ok"}
+    return _delete_key("data", key_id)
 
 
 @router.get("/db/model-keys")
 def db_get_model_keys():
-    return {"keys": list_model_keys()}
+    return _list_keys("model")
 
 
 @router.post("/db/model-keys")
 async def db_post_model_key(request: Request):
-    _keyring, _KEYRING_AVAILABLE, _KC_SERVICE, _KC_DATA_PREFIX, _KC_MODEL_PREFIX = _keyring_refs()
-    payload    = await request.json()
-    model_name = payload.get("model_name", "").strip()
-    provider   = payload.get("provider", "").strip() or _infer_provider(model_name)
-    raw_key    = payload.get("key", "").strip()
-    protected  = bool(payload.get("protected", False))
-    password   = payload.get("password", "")
-    label      = payload.get("label", "").strip()
-    activate   = bool(payload.get("activate", True))
-
-    if not model_name:
-        raise HTTPException(400, "model_name is required")
-
-    if protected:
-        if not password:
-            raise HTTPException(400, "password required for encryption")
-        key_data = encrypt_with_password(password, raw_key)
-        key_id = save_model_key(model_name, provider, key_data, protected, label, activate)
-    else:
-        key_id = save_model_key(model_name, provider, "keychain", False, label, activate)
-        if _KEYRING_AVAILABLE and _keyring is not None:
-            try:
-                _keyring.set_password(_KC_SERVICE, f"{_KC_MODEL_PREFIX}{key_id}", raw_key)
-            except Exception as exc:
-                raise HTTPException(500, f"Failed to store key in OS keychain: {exc}")
-        else:
-            update_model_key_data(key_id, base64.b64encode(raw_key.encode()).decode())
-
-    return {"id": key_id, "status": "ok"}
+    return await _post_key("model", request)
 
 
 @router.post("/db/model-keys/{key_id}/activate")
 def db_activate_model_key(key_id: int):
-    if not activate_model_key(key_id):
-        raise HTTPException(404, f"Model key {key_id} not found")
-    return {"status": "ok"}
+    return _activate_key("model", key_id)
 
 
 @router.delete("/db/model-keys/{key_id}")
 def db_delete_model_key(key_id: int):
-    _keyring, _KEYRING_AVAILABLE, _KC_SERVICE, _KC_DATA_PREFIX, _KC_MODEL_PREFIX = _keyring_refs()
-    rec = get_model_key_by_id(key_id)
-    if not rec:
-        raise HTTPException(404, f"Model key {key_id} not found")
-    if not rec["protected"] and rec["key_data"] == "keychain" and _KEYRING_AVAILABLE and _keyring is not None:
-        try:
-            _keyring.delete_password(_KC_SERVICE, f"{_KC_MODEL_PREFIX}{key_id}")
-        except Exception:
-            pass
-    delete_model_key(key_id)
-    return {"status": "ok"}
-
-
-# ── Legacy compat endpoint ────────────────────────────────────────────────────
-
-@router.get("/db/api_keys")
-def db_get_api_keys():
-    """Backward-compat endpoint used by AI chat and Backtest to check configured keys."""
-    data_rec  = get_active_data_key()
-    model_rec = get_active_model_key()
-    if not data_rec and not model_rec:
-        return {"api_key": None}
-    return {"api_key": {
-        "service":    data_rec["service"]     if data_rec  else "",
-        "model_name": model_rec["model_name"] if model_rec else "",
-        "data_key":   "configured"            if data_rec  and data_rec.get("key_data")  else "",
-        "model_key":  "configured"            if model_rec and model_rec.get("key_data") else "",
-        "protected":  0,
-    }}
+    return _delete_key("model", key_id)

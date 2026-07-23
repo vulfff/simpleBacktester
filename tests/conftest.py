@@ -21,7 +21,6 @@ from fill_model import FillModel
 from actionmanager import ActionManager
 from engine import BacktestEngine
 from strategy import create_strategy
-import strategy_rules  # noqa: F401 — registers rule_set
 from indicator_registry import INDICATOR_REGISTRY
 
 

@@ -10,7 +10,6 @@ const DATA_PROVIDERS = [
   { id: 'alpha-vantage', label: 'Alpha Vantage',  assets: 'Stocks · Forex · Crypto',           rateLimits: '25 req/day free · 500+/min paid',  tier: 'Free + Paid', keyHint: 'Alphanumeric key',                url: 'https://www.alphavantage.co/support/#api-key', desc: 'Solid free tier for US stocks, forex and crypto.' },
   { id: 'polygon',       label: 'Polygon.io',     assets: 'Stocks · Options · Crypto · Forex', rateLimits: '5 req/min free · Unlimited paid',  tier: 'Free + Paid', keyHint: 'Alphanumeric key',                url: 'https://polygon.io/dashboard/signup', desc: 'Deep US market data. Rebranded to Massive (see above).' },
   { id: 'finnhub',       label: 'Finnhub',        assets: 'Stocks · Forex · Crypto',           rateLimits: '60 req/min free',                  tier: 'Free + Paid', keyHint: 'Alphanumeric key from dashboard', url: 'https://finnhub.io/register', desc: 'Real-time & historical data plus fundamentals.' },
-  { id: 'iex-cloud',     label: 'IEX Cloud',      assets: 'Stocks · ETFs',                     rateLimits: '500K messages/mo free',            tier: 'Free + Paid', keyHint: 'Starts with pk_ or sk_',          url: 'https://iexcloud.io/cloud-login#/register', desc: 'High-quality US equity data.' },
 ];
 
 const AI_MODELS = [

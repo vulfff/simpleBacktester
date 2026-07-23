@@ -14,7 +14,6 @@ from fill_model import FillModel
 from actionmanager import ActionManager
 from csvparser import CSVTickDataFeed
 from strategy import create_strategy
-import strategy_rules  # noqa: F401  registers rule_set
 
 
 # ---------------------------------------------------------------------------

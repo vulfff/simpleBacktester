@@ -3,15 +3,15 @@ strategy_rules.py  –  Rule-based strategy framework
 
 Changes vs original
 ====================
-1. Rule.evaluate() now respects per-condition `combiner` fields (AND/OR between
-   each adjacent pair), matching what the frontend serialises.
+1. Rule.evaluate() folds conditions left-to-right honouring each condition's
+   `combiner` ("and"/"or"), matching what the frontend serialises.
 2. PriceSeries.macd() now computes the signal line and histogram properly using
    an incremental EMA buffer instead of returning math.nan.
 3. Condition.from_dict() gracefully skips / wraps exit_condition dicts
    (take_profit_pct, stop_loss_pct, bars_held, time_of_day, day_of_week …)
    that are stored in the conditions list by the frontend.
-4. ExitCondition is a new Condition subclass that is evaluated by the engine
-   via portfolio state rather than price operands.
+4. ExitCondition is a separate dataclass (portfolio-state P&L / time exits)
+   evaluated by the engine, not a price-operand Condition.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
 from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
 
@@ -54,13 +54,26 @@ class TimingMode(str, Enum):
 class Operand(ABC):
     @abstractmethod
     def value(self, series: "PriceSeries") -> float: ...
-    @abstractmethod
-    def to_dict(self) -> Dict[str, Any]: ...
 
     @property
     def min_bars(self) -> int:
         """Minimum bars of history required before this operand returns a valid value."""
         return 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise as {"type": tag} plus every dataclass field.
+
+        A single trailing underscore is stripped from field names
+        (ConstantOperand.value_ -> "value") and Enum values are emitted as their
+        `.value`. Subclasses with a bespoke wire format (e.g.
+        CustomIndicatorOperand) override this.
+        """
+        out: Dict[str, Any] = {"type": self._type_tag}
+        for f in fields(self):
+            key = f.name[:-1] if f.name.endswith("_") else f.name
+            val = getattr(self, f.name)
+            out[key] = val.value if isinstance(val, Enum) else val
+        return out
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Operand":
@@ -71,8 +84,24 @@ class Operand(ABC):
         return cls._from_dict(d)
 
     @classmethod
-    @abstractmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "Operand": ...
+    def _from_dict(cls, d: Dict[str, Any]) -> "Operand":
+        """Rebuild from a dict produced by to_dict().
+
+        Each dataclass field is read by its (underscore-stripped) key, falling
+        back to the dataclass default when absent, then coerced to the field's
+        declared type. Subclasses may override for a bespoke wire format.
+        """
+        kwargs: Dict[str, Any] = {}
+        for f in fields(cls):
+            key = f.name[:-1] if f.name.endswith("_") else f.name
+            if f.default is not MISSING:
+                default = f.default
+            elif f.default_factory is not MISSING:
+                default = f.default_factory()
+            else:
+                default = None
+            kwargs[f.name] = _coerce_operand_field(f.type, d.get(key, default))
+        return cls(**kwargs)
 
 
 _OPERAND_REGISTRY: Dict[str, type] = {}
@@ -81,6 +110,29 @@ _OPERAND_REGISTRY: Dict[str, type] = {}
 def _reg(cls):
     _OPERAND_REGISTRY[cls._type_tag] = cls
     return cls
+
+
+def _coerce_operand_field(ftype: Any, raw: Any) -> Any:
+    """Coerce a raw JSON value to a dataclass field's declared type.
+
+    `ftype` is the field annotation: a string under `from __future__ import
+    annotations` (e.g. "int", "PriceField") or a type object otherwise. The
+    enum / number types referenced below are defined further down in this
+    module; this helper only runs at call time (deserialisation), by which
+    point they all exist.
+    """
+    name = ftype if isinstance(ftype, str) else getattr(ftype, "__name__", ftype)
+    if name == "PriceField":
+        return _parse_price_field(raw)
+    if name == "BollingerComponent":
+        return BollingerComponent(raw)
+    if name == "MACDComponent":
+        return MACDComponent(raw)
+    if name == "int":
+        return int(raw)
+    if name == "float":
+        return float(raw)
+    return raw
 
 
 # ── Constant ─────────────────────────────────────────────────────────────────
@@ -93,13 +145,6 @@ class ConstantOperand(Operand):
 
     def value(self, series: "PriceSeries") -> float:
         return self.value_
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "constant", "value": self.value_}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "ConstantOperand":
-        return cls(value_=float(d["value"]))
 
 
 # ── Price field ───────────────────────────────────────────────────────────────
@@ -129,13 +174,6 @@ class PriceOperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.current(self.field)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "price", "field": self.field.value}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "PriceOperand":
-        return cls(field=_parse_price_field(d["field"]))
-
 
 # ── Lookback ──────────────────────────────────────────────────────────────────
 
@@ -152,13 +190,6 @@ class LookbackOperand(Operand):
 
     def value(self, series: "PriceSeries") -> float:
         return series.ago(self.field, self.period)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "lookback", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "LookbackOperand":
-        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── SMA ───────────────────────────────────────────────────────────────────────
@@ -180,13 +211,6 @@ class SMAOperand(Operand):
             return math.nan
         return sum(buf) / self.period
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "sma", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "SMAOperand":
-        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
-
 
 # ── EMA ───────────────────────────────────────────────────────────────────────
 
@@ -204,13 +228,6 @@ class EMAOperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.ema(self.field, self.period)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "ema", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "EMAOperand":
-        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
-
 
 # ── RSI ───────────────────────────────────────────────────────────────────────
 
@@ -227,13 +244,6 @@ class RSIOperand(Operand):
 
     def value(self, series: "PriceSeries") -> float:
         return series.rsi(self.field, self.period)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "rsi", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "RSIOperand":
-        return cls(field=_parse_price_field(d["field"]), period=int(d["period"]))
 
 
 # ── Bollinger ─────────────────────────────────────────────────────────────────
@@ -262,19 +272,6 @@ class BollingerOperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.bollinger(self.field, self.period, self.std_dev, self.component)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "bollinger", "field": self.field.value, "period": self.period,
-                "std_dev": self.std_dev, "component": self.component.value}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "BollingerOperand":
-        return cls(
-            field=_parse_price_field(d["field"]),
-            period=int(d["period"]),
-            std_dev=float(d.get("std_dev", 2.0)),
-            component=BollingerComponent(d.get("component", "upper")),
-        )
-
 
 # ── MACD ──────────────────────────────────────────────────────────────────────
 
@@ -300,19 +297,6 @@ class MACDOperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.macd(self.fast, self.slow, self.signal, self.component)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "macd", "fast": self.fast, "slow": self.slow,
-                "signal": self.signal, "component": self.component.value}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "MACDOperand":
-        return cls(
-            fast=int(d.get("fast", 12)),
-            slow=int(d.get("slow", 26)),
-            signal=int(d.get("signal", 9)),
-            component=MACDComponent(d.get("component", "macd")),
-        )
-
 
 # ── Highest High ─────────────────────────────────────────────────────────────
 
@@ -329,13 +313,6 @@ class HighestHighOperand(Operand):
 
     def value(self, series: "PriceSeries") -> float:
         return series.highest(self.field, self.period)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "highest_high", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "HighestHighOperand":
-        return cls(field=PriceField(d.get("field", "high")), period=int(d["period"]))
 
 
 # ── Lowest Low ────────────────────────────────────────────────────────────────
@@ -354,13 +331,6 @@ class LowestLowOperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.lowest(self.field, self.period)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "lowest_low", "field": self.field.value, "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "LowestLowOperand":
-        return cls(field=PriceField(d.get("field", "low")), period=int(d["period"]))
-
 
 # ── ATR ───────────────────────────────────────────────────────────────────────
 
@@ -377,13 +347,6 @@ class ATROperand(Operand):
     def value(self, series: "PriceSeries") -> float:
         return series.atr(self.period)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "atr", "period": self.period}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "ATROperand":
-        return cls(period=int(d.get("period", 14)))
-
 
 # ── Typical Price ─────────────────────────────────────────────────────────────
 
@@ -394,13 +357,6 @@ class TypicalPriceOperand(Operand):
 
     def value(self, series: "PriceSeries") -> float:
         return series.typical_price()
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "typical_price"}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "TypicalPriceOperand":
-        return cls()
 
 
 # ── Time of Day ───────────────────────────────────────────────────────────────
@@ -425,13 +381,6 @@ class TimeOfDayOperand(Operand):
         if t is None:
             return math.nan
         return float(t.hour * 60 + t.minute)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"type": "time_of_day"}
-
-    @classmethod
-    def _from_dict(cls, d: Dict[str, Any]) -> "TimeOfDayOperand":
-        return cls()
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +421,10 @@ class Condition:
         if self.operator == Operator.EQ:  return math.isclose(lv, rv)
         if self.operator == Operator.NEQ: return not math.isclose(lv, rv)
 
+        # cross_above / cross_below need the previous bar's snapshot; before the
+        # first tick there is none, so the cross cannot have happened yet.
+        if series.prev_snapshot is None:
+            return False
         lv_prev = self.left.value(series.prev_snapshot)
         rv_prev = self.right.value(series.prev_snapshot)
         if math.isnan(lv_prev) or math.isnan(rv_prev):
@@ -569,11 +522,6 @@ def _portfolio_pnl_pct(portfolio: Any, entry_equity: float = None) -> Optional[f
 # 5. Rule  – per-condition AND/OR combiner
 # ---------------------------------------------------------------------------
 
-class RuleCombiner(str, Enum):
-    AND = "and"
-    OR  = "or"
-
-
 @dataclass
 class Rule:
     """
@@ -595,7 +543,6 @@ class Rule:
     role:            RuleRole
     conditions:      List[Condition]        # signal conditions
     exit_conditions: List[ExitCondition] = field(default_factory=list)
-    combiner:        RuleCombiner = RuleCombiner.AND   # fallback / legacy
     timing:          TimingMode   = TimingMode.ON_CHANGE
     quantity:        float        = 1.0
 
@@ -617,10 +564,13 @@ class Rule:
                 return False
 
         # ── signal conditions ──────────────────────────────────────────────
+        # Fold left-to-right honouring each condition's combiner. Every
+        # condition is evaluated (conditions are stateless, so no short-circuit).
         if self.conditions:
             result = self.conditions[0].evaluate(series)
             for cond in self.conditions[1:]:
-                result = result and cond.evaluate(series)
+                c = cond.evaluate(series)
+                result = (result or c) if cond.combiner == "or" else (result and c)
         else:
             result = True  # no signal conditions = always pass (rely on exit conds)
 
@@ -629,8 +579,9 @@ class Rule:
             exit_result = self.exit_conditions[0].evaluate_portfolio(
                 portfolio, tick, self._bars_in_trade, entry_equity)
             for ec in self.exit_conditions[1:]:
-                exit_result = exit_result and ec.evaluate_portfolio(
+                er = ec.evaluate_portfolio(
                     portfolio, tick, self._bars_in_trade, entry_equity)
+                exit_result = (exit_result or er) if ec.combiner == "or" else (exit_result and er)
             result = result and exit_result
 
         # ── timing filter ──────────────────────────────────────────────────
@@ -668,7 +619,6 @@ class Rule:
             "exit_conditions": [{"kind": "exit_condition", "exitType": ec.exit_type,
                                   "value": ec.value, "combiner": ec.combiner}
                                  for ec in self.exit_conditions],
-            "combiner":        self.combiner.value,
             "timing":          self.timing.value,
             "quantity":        self.quantity,
         }
@@ -693,12 +643,13 @@ class Rule:
                 except Exception:
                     pass
 
+        # Note: a legacy top-level "combiner" key in old payloads is silently
+        # ignored — the field no longer exists on Rule.
         return Rule(
             name=d.get("name", "Rule"),
             role=RuleRole(d["role"]),
             conditions=signal_conds,
             exit_conditions=exit_conds,
-            combiner=RuleCombiner(d.get("combiner", "and")),
             timing=TimingMode(d.get("timing", "on_change")),
             quantity=float(d.get("quantity", 1.0)),
         )
@@ -750,7 +701,7 @@ class PriceSeries:
         self._macd_last_tick: Dict[Tuple, int]          = {}  # last tick index per MACD key
         self._ema_state:      Dict[Tuple, float]        = {}  # running EMA values (persistent)
         self._ema_last_tick:  Dict[Tuple, int]          = {}  # tick when EMA was last updated
-        self.prev_snapshot: "PriceSeries" = _NullSeries()
+        self.prev_snapshot: Optional["PriceSeries"] = None
         self._current_time = None  # datetime of the most recent tick
 
     def push(self, tick: TickData) -> None:
@@ -964,26 +915,6 @@ class PriceSeries:
         return (h + l + c) / 3
 
 
-class _NullSeries(PriceSeries):
-    """Stub returned as prev_snapshot before the first tick."""
-    def __init__(self) -> None:
-        # Don't call super().__init__() — we override everything
-        self._bufs      = {}
-        self._cache     = {}
-        self._macd_hist = {}
-        self.prev_snapshot = self   # circular — but never queried deeper
-        self._current_time = None
-
-    def current(self, *_):    return math.nan
-    def ago(self, *_):        return math.nan
-    def buffer(self, *_):     return []
-    def ema(self, *_):        return math.nan
-    def rsi(self, *_):        return math.nan
-    def bollinger(self, *_):  return math.nan
-    def macd(self, *_):       return math.nan
-    def push(self, *_):       pass
-
-
 class _SnapShot(PriceSeries):
     """Lightweight copy of PriceSeries state for crossover detection (prev tick)."""
     def __init__(self, src: PriceSeries) -> None:
@@ -1075,20 +1006,12 @@ class RuleSetStrategy(Strategy):
 # 9. Register with existing registry
 # ---------------------------------------------------------------------------
 
-from strategy import StrategyConfig, register_strategy  # noqa: E402
-from pydantic import Field as PField                     # noqa: E402
-import json                                              # noqa: E402
+from strategy import StrategyConfig     # noqa: E402
+from pydantic import Field as PField    # noqa: E402
 
 
 class RuleSetStrategyConfig(StrategyConfig):
     rule_set: Dict[str, Any] = PField(default_factory=dict)
-
-
-register_strategy(
-    name="rule_set",
-    config_model=RuleSetStrategyConfig,
-    factory=lambda cfg: RuleSetStrategy(RuleSet.from_dict(cfg.rule_set)),
-)
 
 
 # ---------------------------------------------------------------------------

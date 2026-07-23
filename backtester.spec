@@ -23,6 +23,7 @@ HIDDEN = [
     "pystray._appindicator",
     "pystray._gtk",
     "PIL.Image",
+    "pyperclip",
 ]
 
 

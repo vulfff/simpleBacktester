@@ -25,9 +25,7 @@ class Portfolio:
     last_prices: Dict[str, float] = field(default_factory=dict)
 
     # Book-keeping
-    realized_pnl:   float = 0.0
-    unrealized_pnl: float = 0.0
-    trade_log:      List[Trade] = field(default_factory=list)
+    trade_log: List[Trade] = field(default_factory=list)
 
     # ── derived ─────────────────────────────────────────────────────────────
 

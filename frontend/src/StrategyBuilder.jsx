@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AIStrategyChat } from './AIStrategyChat';
+import { AIStrategyChat } from './AIChat';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
@@ -13,48 +13,6 @@ const timeToMinutes = s => {
   const [h, m] = (s || '00:00').split(':').map(Number);
   return h * 60 + (m || 0);
 };
-
-// ─── Custom indicator expression tree helpers ─────────────────────────────────
-const _pfx = (path, key) => path ? `${path}.${key}` : key;
-const _PATH_LABELS = { cond_right: 'Threshold', cond_left: 'Left value', then: 'True value', 'else_': 'False value', lo: 'Min', hi: 'Max', value: 'Value', left: 'Left operand', right: 'Right operand' };
-const _labelFromPath = path => {
-  if (!path) return 'Value';
-  const last = path.split('.').pop();
-  return _PATH_LABELS[last] || last.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-};
-const _OPERAND_NUMERIC_PARAMS = ['period', 'fast', 'slow', 'signal', 'std_dev'];
-
-function getEditableParams(expr, path = '') {
-  const kind = expr?.node;
-  const results = [];
-  if (kind === 'const') {
-    const k = path || 'value';
-    results.push({ path: k, label: _labelFromPath(path), defaultValue: Number(expr.value), paramType: 'float' });
-  } else if (kind === 'operand') {
-    const op = expr.operand || {};
-    const opType = (op.type || 'operand').toUpperCase();
-    for (const param of _OPERAND_NUMERIC_PARAMS) {
-      if (param in op) {
-        results.push({ path: _pfx(path, `operand.${param}`), label: `${opType} ${param.replace(/_/g, ' ')}`, defaultValue: Number(op[param]), paramType: param === 'std_dev' ? 'float' : 'int' });
-      }
-    }
-  } else if (kind === 'binop') {
-    results.push(...getEditableParams(expr.left,  _pfx(path, 'left')));
-    results.push(...getEditableParams(expr.right, _pfx(path, 'right')));
-  } else if (kind === 'unop') {
-    results.push(...getEditableParams(expr.operand, _pfx(path, 'operand')));
-  } else if (kind === 'clamp') {
-    results.push(...getEditableParams(expr.value, _pfx(path, 'value')));
-    results.push(...getEditableParams(expr.lo,    _pfx(path, 'lo')));
-    results.push(...getEditableParams(expr.hi,    _pfx(path, 'hi')));
-  } else if (kind === 'ifelse') {
-    results.push(...getEditableParams(expr.cond_left,  _pfx(path, 'cond_left')));
-    results.push(...getEditableParams(expr.cond_right, _pfx(path, 'cond_right')));
-    results.push(...getEditableParams(expr.then,       _pfx(path, 'then')));
-    results.push(...getEditableParams(expr['else_'],   _pfx(path, 'else_')));
-  }
-  return results;
-}
 
 // ─── Signal preset blocks ─────────────────────────────────────────────────────
 const SIGNAL_BLOCKS = [
@@ -419,7 +377,9 @@ function ExitConditionEditor({ cond, onChange }) {
 function CustomOperandPanel({ operand, onChange, customIndicators, label = 'Left side' }) {
   const { t } = useTranslation();
   const ind = customIndicators.find(i => i.name === operand.name);
-  const params = ind ? getEditableParams(ind.expr?.expr) : [];
+  // Server now computes this (indicator_registry.extract_editable_params); normalize its
+  // snake_case keys to what this panel's JSX expects below.
+  const params = (ind?.editable_params || []).map(p => ({ path: p.path, label: p.label, defaultValue: p.default_value, paramType: p.param_type }));
   const overrides = operand.overrides || {};
   return (
     <div style={{ background: '#0b1120', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 14px' }}>

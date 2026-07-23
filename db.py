@@ -168,136 +168,85 @@ def create_tables() -> None:
             pass  # legacy table may not exist in fresh DBs
 
 
-# ── Data API key helpers ───────────────────────────────────────────────────────
+# ── Generic key-store CRUD (backs data_api_keys / model_api_keys) ──────────────
+# `kind` is always an internal literal ("data"/"model"), never user input — safe as a whitelisted table/column lookup key below.
+_KEY_SPECS: Dict[str, Dict[str, Any]] = {
+    "data":  {"table": "data_api_keys",  "name_cols": ["service"]},
+    "model": {"table": "model_api_keys", "name_cols": ["model_name", "provider"]},
+}
 
-def list_data_keys() -> List[Dict[str, Any]]:
+
+def _kt_list(kind: str) -> List[Dict[str, Any]]:
+    spec = _KEY_SPECS[kind]
+    cols = ", ".join(["id", *spec["name_cols"], "label", "active", "protected"])
     with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, service, label, active, protected FROM data_api_keys ORDER BY active DESC, id")
-        return [dict(r) for r in cur.fetchall()]
+        return [dict(r) for r in conn.execute(f"SELECT {cols} FROM {spec['table']} ORDER BY active DESC, id").fetchall()]
 
 
-def save_data_key(service: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int:
+def _kt_save(kind: str, name_values: tuple, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int:
+    spec = _KEY_SPECS[kind]
+    cols = spec["name_cols"] + ["key_data", "protected", "active", "label"]
     with db_conn(commit=True) as conn:
-        cur = conn.cursor()
         if activate:
-            cur.execute("UPDATE data_api_keys SET active=0")
-        cur.execute(
-            "INSERT INTO data_api_keys (service, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?)",
-            (service, key_data, 1 if protected else 0, 1 if activate else 0, label),
-        )
+            conn.execute(f"UPDATE {spec['table']} SET active=0")
+        cur = conn.execute(f"INSERT INTO {spec['table']} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                            (*name_values, key_data, 1 if protected else 0, 1 if activate else 0, label))
         return cur.lastrowid
 
 
-def activate_data_key(key_id: int) -> bool:
+def _kt_activate(kind: str, key_id: int) -> bool:
+    table = _KEY_SPECS[kind]["table"]
     with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE data_api_keys SET active=0")
-        cur.execute("UPDATE data_api_keys SET active=1 WHERE id=?", (key_id,))
-        return cur.rowcount > 0
+        conn.execute(f"UPDATE {table} SET active=0")
+        return conn.execute(f"UPDATE {table} SET active=1 WHERE id=?", (key_id,)).rowcount > 0
 
 
-def delete_data_key(key_id: int) -> bool:
+def _kt_delete(kind: str, key_id: int) -> bool:
     with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM data_api_keys WHERE id=?", (key_id,))
-        return cur.rowcount > 0
+        return conn.execute(f"DELETE FROM {_KEY_SPECS[kind]['table']} WHERE id=?", (key_id,)).rowcount > 0
 
 
-def get_active_data_key() -> Optional[Dict[str, Any]]:
+def _kt_get(kind: str, key_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """key_id=None fetches the active key; otherwise fetches by id."""
+    spec = _KEY_SPECS[kind]
+    cols = ", ".join(["id", *spec["name_cols"], "key_data", "protected"])
+    where, args = ("active=1", ()) if key_id is None else ("id=?", (key_id,))
     with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, service, key_data, protected FROM data_api_keys WHERE active=1 LIMIT 1")
-        row = cur.fetchone()
+        row = conn.execute(f"SELECT {cols} FROM {spec['table']} WHERE {where} LIMIT 1", args).fetchone()
         return dict(row) if row else None
 
 
-def get_data_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, service, key_data, protected FROM data_api_keys WHERE id=?", (key_id,))
-        row = cur.fetchone()
-        return dict(row) if row else None
-
-
-def update_data_key_data(key_id: int, key_data: str) -> None:
+def _kt_update_key_data(kind: str, key_id: int, key_data: str) -> None:
     with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE data_api_keys SET key_data=? WHERE id=?", (key_data, key_id))
+        conn.execute(f"UPDATE {_KEY_SPECS[kind]['table']} SET key_data=? WHERE id=?", (key_data, key_id))
 
 
-def list_all_data_keys_full() -> List[Dict[str, Any]]:
-    """Return id, key_data, protected for all data keys (used for migration)."""
+def _kt_list_all_full(kind: str) -> List[Dict[str, Any]]:
+    """Return id, key_data, protected for every row (used for migration)."""
     with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, key_data, protected FROM data_api_keys")
-        return [dict(r) for r in cur.fetchall()]
+        return [dict(r) for r in conn.execute(f"SELECT id, key_data, protected FROM {_KEY_SPECS[kind]['table']}").fetchall()]
 
 
-# ── Model API key helpers ─────────────────────────────────────────────────────
-
-def list_model_keys() -> List[Dict[str, Any]]:
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, model_name, provider, label, active, protected FROM model_api_keys ORDER BY active DESC, id")
-        return [dict(r) for r in cur.fetchall()]
-
-
-def save_model_key(model_name: str, provider: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int:
-    with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        if activate:
-            cur.execute("UPDATE model_api_keys SET active=0")
-        cur.execute(
-            "INSERT INTO model_api_keys (model_name, provider, key_data, protected, active, label) VALUES (?, ?, ?, ?, ?, ?)",
-            (model_name, provider, key_data, 1 if protected else 0, 1 if activate else 0, label),
-        )
-        return cur.lastrowid
+# ── Data API key helpers (one-line delegations so callers need zero changes) ───
+def list_data_keys() -> List[Dict[str, Any]]: return _kt_list("data")
+def save_data_key(service: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int: return _kt_save("data", (service,), key_data, protected, label, activate)
+def activate_data_key(key_id: int) -> bool: return _kt_activate("data", key_id)
+def delete_data_key(key_id: int) -> bool: return _kt_delete("data", key_id)
+def get_active_data_key() -> Optional[Dict[str, Any]]: return _kt_get("data")
+def get_data_key_by_id(key_id: int) -> Optional[Dict[str, Any]]: return _kt_get("data", key_id)
+def update_data_key_data(key_id: int, key_data: str) -> None: _kt_update_key_data("data", key_id, key_data)
+def list_all_data_keys_full() -> List[Dict[str, Any]]: return _kt_list_all_full("data")
 
 
-def activate_model_key(key_id: int) -> bool:
-    with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE model_api_keys SET active=0")
-        cur.execute("UPDATE model_api_keys SET active=1 WHERE id=?", (key_id,))
-        return cur.rowcount > 0
-
-
-def delete_model_key(key_id: int) -> bool:
-    with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM model_api_keys WHERE id=?", (key_id,))
-        return cur.rowcount > 0
-
-
-def get_active_model_key() -> Optional[Dict[str, Any]]:
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, model_name, provider, key_data, protected FROM model_api_keys WHERE active=1 LIMIT 1")
-        row = cur.fetchone()
-        return dict(row) if row else None
-
-
-def get_model_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, model_name, provider, key_data, protected FROM model_api_keys WHERE id=?", (key_id,))
-        row = cur.fetchone()
-        return dict(row) if row else None
-
-
-def update_model_key_data(key_id: int, key_data: str) -> None:
-    with db_conn(commit=True) as conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE model_api_keys SET key_data=? WHERE id=?", (key_data, key_id))
-
-
-def list_all_model_keys_full() -> List[Dict[str, Any]]:
-    """Return id, key_data, protected for all model keys (used for migration)."""
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, key_data, protected FROM model_api_keys")
-        return [dict(r) for r in cur.fetchall()]
+# ── Model API key helpers (one-line delegations so callers need zero changes) ──
+def list_model_keys() -> List[Dict[str, Any]]: return _kt_list("model")
+def save_model_key(model_name: str, provider: str, key_data: str, protected: bool, label: str = "", activate: bool = True) -> int: return _kt_save("model", (model_name, provider), key_data, protected, label, activate)
+def activate_model_key(key_id: int) -> bool: return _kt_activate("model", key_id)
+def delete_model_key(key_id: int) -> bool: return _kt_delete("model", key_id)
+def get_active_model_key() -> Optional[Dict[str, Any]]: return _kt_get("model")
+def get_model_key_by_id(key_id: int) -> Optional[Dict[str, Any]]: return _kt_get("model", key_id)
+def update_model_key_data(key_id: int, key_data: str) -> None: _kt_update_key_data("model", key_id, key_data)
+def list_all_model_keys_full() -> List[Dict[str, Any]]: return _kt_list_all_full("model")
 
 
 def _derive_fernet_key(password: str, salt: bytes) -> bytes:

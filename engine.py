@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Iterable, List
+from typing import Deque, Iterable, List
 
 from actionmanager import ActionManager
-from eventqueue import EventQueue
 from events import Event, FillEvent, OrderEvent, SignalEvent, TickEvent
 from fill_model import FillModel
 from portfolio import Portfolio
@@ -37,7 +37,7 @@ class BacktestEngine:
     verbose:          bool  = True
 
     def __post_init__(self) -> None:
-        self.events      = EventQueue()
+        self.events: Deque[Event] = deque()
         self._last_tick: dict[str, TickData] = {}
         self._tick_count = 0
         self._fill_count = 0
@@ -72,7 +72,7 @@ class BacktestEngine:
             self._fill_pending_at_open(tick)
 
             # 2. Put a tick event and drain (strategy evaluation + order queueing)
-            self.events.put(TickEvent(tick=tick))
+            self.events.append(TickEvent(tick=tick))
             self._drain_events()
             self._tick_count += 1
 
@@ -86,11 +86,8 @@ class BacktestEngine:
             )
 
     def _drain_events(self) -> None:
-        while not self.events.empty():
-            event = self.events.get()
-            if event is None:
-                return
-            self._handle_event(event)
+        while self.events:
+            self._handle_event(self.events.popleft())
 
     def _handle_event(self, event: Event) -> None:
         if isinstance(event, TickEvent):   self._handle_tick(event);   return
@@ -110,7 +107,7 @@ class BacktestEngine:
         self.strategy._portfolio = self.portfolio
 
         for signal in self.strategy.on_tick(tick):
-            self.events.put(signal)
+            self.events.append(signal)
 
     def _handle_signal(self, event: SignalEvent) -> None:
         # Capture timestamp from the most-recently-seen tick for this symbol
@@ -139,7 +136,7 @@ class BacktestEngine:
         if blocked:
             return
         for order in self.action_manager.on_signal(event):
-            self.events.put(order)
+            self.events.append(order)
 
     def _handle_order(self, event: OrderEvent) -> None:
         """Queue the order for execution at the next bar's open."""

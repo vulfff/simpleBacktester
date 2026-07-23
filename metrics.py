@@ -166,6 +166,47 @@ def compute_metrics(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _fifo_match(events):
+    """
+    Shared FIFO round-trip engine for both public matchers below.
+
+    ``events`` is a list of normalized fill dicts, each carrying at least
+    ``action`` (lowercased), ``symbol``, ``price`` and ``qty`` plus whatever
+    extra metadata (commission, bar index, timestamp) the caller attached and
+    reads back. Buy/short fills are queued per symbol; sell/cover fills are
+    consumed FIFO against the opposing queue. Yields one
+    ``(side, entry, exit_fill, filled, gross_pnl)`` tuple per matched lot —
+    long vs short is a single sign flip on the P&L: (exit − entry) for longs,
+    (entry − exit) for shorts. The queued ``entry`` dict is yielded live, before
+    its qty is decremented, so adapters can prorate commission against its
+    remaining qty in place before the next lot is matched.
+    """
+    long_q:  Dict[str, list] = defaultdict(list)
+    short_q: Dict[str, list] = defaultdict(list)
+
+    for ev in events:
+        action = ev["action"]
+        sym    = ev["symbol"]
+        if action == "buy":
+            long_q[sym].append(ev)
+        elif action == "short":
+            short_q[sym].append(ev)
+        elif action in ("sell", "cover"):
+            is_long   = action == "sell"
+            queue     = long_q[sym] if is_long else short_q[sym]
+            remaining = ev["qty"]
+            while remaining > 0 and queue:
+                entry  = queue[0]
+                filled = min(remaining, entry["qty"])
+                gross  = ((ev["price"] - entry["price"]) if is_long
+                          else (entry["price"] - ev["price"])) * filled
+                yield ("long" if is_long else "short"), entry, ev, filled, gross
+                entry["qty"] -= filled
+                remaining    -= filled
+                if entry["qty"] <= 0:
+                    queue.pop(0)
+
+
 def _match_round_trips(trade_log, equity_curve=None) -> List[Dict[str, Any]]:
     """
     Match buy→sell and short→cover pairs using FIFO queues per symbol.
@@ -184,74 +225,34 @@ def _match_round_trips(trade_log, equity_curve=None) -> List[Dict[str, Any]]:
             return time_to_bar[trade.time]
         return fallback_idx
 
-    long_q:  Dict[str, list] = defaultdict(list)
-    short_q: Dict[str, list] = defaultdict(list)
+    events = [
+        {
+            "action":     trade.action.lower(),
+            "symbol":     trade.symbol,
+            "price":      trade.price,
+            "qty":        trade.quantity,
+            "bar":        _bar_of(trade, idx),
+            "commission": getattr(trade, "commission", 0.0) or 0.0,
+        }
+        for idx, trade in enumerate(trade_log)
+    ]
+
     round_trips: List[Dict[str, Any]] = []
-
-    for idx, trade in enumerate(trade_log):
-        action  = trade.action.lower()
-        sym     = trade.symbol
-        bar_idx = _bar_of(trade, idx)
-        comm    = getattr(trade, "commission", 0.0) or 0.0
-
-        if action == "buy":
-            long_q[sym].append({"price": trade.price, "qty": trade.quantity,
-                                 "bar": bar_idx, "commission": comm})
-
-        elif action == "sell":
-            remaining = trade.quantity
-            exit_comm_per_unit = comm / trade.quantity if trade.quantity > 0 else 0.0
-            while remaining > 0 and long_q[sym]:
-                entry  = long_q[sym][0]
-                filled = min(remaining, entry["qty"])
-                entry_comm = entry["commission"] * (filled / entry["qty"]) if entry["qty"] > 0 else 0.0
-                exit_comm  = exit_comm_per_unit * filled
-                pnl     = (trade.price - entry["price"]) * filled - entry_comm - exit_comm
-                pnl_pct = pnl / (entry["price"] * filled) * 100 if entry["price"] else 0
-                round_trips.append({
-                    "symbol":      sym,
-                    "entry_price": entry["price"],
-                    "exit_price":  trade.price,
-                    "qty":         filled,
-                    "pnl":         pnl,
-                    "pnl_pct":     pnl_pct,
-                    "bars":        bar_idx - entry["bar"],
-                })
-                entry["qty"]        -= filled
-                entry["commission"] -= entry_comm
-                remaining           -= filled
-                if entry["qty"] <= 0:
-                    long_q[sym].pop(0)
-
-        elif action == "short":
-            short_q[sym].append({"price": trade.price, "qty": trade.quantity,
-                                  "bar": bar_idx, "commission": comm})
-
-        elif action == "cover":
-            remaining = trade.quantity
-            exit_comm_per_unit = comm / trade.quantity if trade.quantity > 0 else 0.0
-            while remaining > 0 and short_q[sym]:
-                entry  = short_q[sym][0]
-                filled = min(remaining, entry["qty"])
-                entry_comm = entry["commission"] * (filled / entry["qty"]) if entry["qty"] > 0 else 0.0
-                exit_comm  = exit_comm_per_unit * filled
-                pnl     = (entry["price"] - trade.price) * filled - entry_comm - exit_comm
-                pnl_pct = pnl / (entry["price"] * filled) * 100 if entry["price"] else 0
-                round_trips.append({
-                    "symbol":      sym,
-                    "entry_price": entry["price"],
-                    "exit_price":  trade.price,
-                    "qty":         filled,
-                    "pnl":         pnl,
-                    "pnl_pct":     pnl_pct,
-                    "bars":        bar_idx - entry["bar"],
-                })
-                entry["qty"]        -= filled
-                entry["commission"] -= entry_comm
-                remaining           -= filled
-                if entry["qty"] <= 0:
-                    short_q[sym].pop(0)
-
+    for _side, entry, exit_fill, filled, gross in _fifo_match(events):
+        entry_comm = entry["commission"] * (filled / entry["qty"]) if entry["qty"] > 0 else 0.0
+        exit_comm  = (exit_fill["commission"] / exit_fill["qty"] if exit_fill["qty"] > 0 else 0.0) * filled
+        entry["commission"] -= entry_comm
+        pnl     = gross - entry_comm - exit_comm
+        pnl_pct = pnl / (entry["price"] * filled) * 100 if entry["price"] else 0
+        round_trips.append({
+            "symbol":      exit_fill["symbol"],
+            "entry_price": entry["price"],
+            "exit_price":  exit_fill["price"],
+            "qty":         filled,
+            "pnl":         pnl,
+            "pnl_pct":     pnl_pct,
+            "bars":        exit_fill["bar"] - entry["bar"],
+        })
     return round_trips
 
 
@@ -261,10 +262,7 @@ def match_round_trips_from_dicts(fills: List[Dict[str, Any]]) -> List[Dict[str, 
     Each fill: {t, action, symbol, qty, price}.
     Returns round-trip dicts: {symbol, side, entry_time, exit_time, entry_price, exit_price, qty, pnl, pnl_pct}.
     """
-    long_q:  Dict[str, list] = defaultdict(list)
-    short_q: Dict[str, list] = defaultdict(list)
-    trips: List[Dict[str, Any]] = []
-
+    events = []
     for f in fills:
         action = (f.get("action") or "").lower()
         sym    = f.get("symbol", "")
@@ -274,43 +272,15 @@ def match_round_trips_from_dicts(fills: List[Dict[str, Any]]) -> List[Dict[str, 
 
         if qty <= 0:
             continue  # skip zero/negative-qty fills
-        if action == "buy":
-            long_q[sym].append({"price": price, "qty": qty, "t": t})
-        elif action == "sell":
-            remaining = qty
-            while remaining > 0 and long_q[sym]:
-                entry  = long_q[sym][0]
-                filled = min(remaining, entry["qty"])
-                pnl    = (price - entry["price"]) * filled
-                pnl_pct = pnl / (entry["price"] * filled) * 100 if entry["price"] else 0
-                trips.append({
-                    "symbol": sym, "side": "long",
-                    "entry_time": entry["t"], "exit_time": t,
-                    "entry_price": entry["price"], "exit_price": price,
-                    "qty": filled, "pnl": round(pnl, 4), "pnl_pct": round(pnl_pct, 2),
-                })
-                entry["qty"] -= filled
-                remaining    -= filled
-                if entry["qty"] <= 0:
-                    long_q[sym].pop(0)
-        elif action == "short":
-            short_q[sym].append({"price": price, "qty": qty, "t": t})
-        elif action == "cover":
-            remaining = qty
-            while remaining > 0 and short_q[sym]:
-                entry  = short_q[sym][0]
-                filled = min(remaining, entry["qty"])
-                pnl    = (entry["price"] - price) * filled
-                pnl_pct = pnl / (entry["price"] * filled) * 100 if entry["price"] else 0
-                trips.append({
-                    "symbol": sym, "side": "short",
-                    "entry_time": entry["t"], "exit_time": t,
-                    "entry_price": entry["price"], "exit_price": price,
-                    "qty": filled, "pnl": round(pnl, 4), "pnl_pct": round(pnl_pct, 2),
-                })
-                entry["qty"] -= filled
-                remaining    -= filled
-                if entry["qty"] <= 0:
-                    short_q[sym].pop(0)
+        events.append({"action": action, "symbol": sym, "price": price, "qty": qty, "t": t})
 
+    trips: List[Dict[str, Any]] = []
+    for side, entry, exit_fill, filled, gross in _fifo_match(events):
+        pnl_pct = gross / (entry["price"] * filled) * 100 if entry["price"] else 0
+        trips.append({
+            "symbol": exit_fill["symbol"], "side": side,
+            "entry_time": entry["t"], "exit_time": exit_fill["t"],
+            "entry_price": entry["price"], "exit_price": exit_fill["price"],
+            "qty": filled, "pnl": round(gross, 4), "pnl_pct": round(pnl_pct, 2),
+        })
     return trips

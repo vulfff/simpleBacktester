@@ -7,4 +7,4 @@ keyring
 platformdirs>=4.0
 pystray>=0.19
 pillow>=10.0
-yfinance>=0.2
+pyperclip>=1.8

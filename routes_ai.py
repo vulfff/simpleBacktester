@@ -140,12 +140,6 @@ def _auto_populate_overrides(strategy: dict) -> None:
                     op["overrides"] = merged
 
 
-def _match_round_trips_from_dicts(fills: list) -> list:
-    """Match buy->sell and short->cover fill dicts into round-trip trades with PnL."""
-    from metrics import match_round_trips_from_dicts
-    return match_round_trips_from_dicts(fills)
-
-
 # ── Request / Response Models ─────────────────────────────────────────────────
 
 class AIStrategyRequest(BaseModel):
@@ -283,27 +277,6 @@ async def ai_list_models(request: ListModelsRequest) -> Dict[str, Any]:
         raise HTTPException(500, f"Failed to fetch models: {str(exc)}") from exc
 
 
-@router.get("/ai/schema")
-def ai_strategy_schema() -> Dict[str, Any]:
-    from ai_strategy_builder import StrategySchema
-    return {
-        "operand_types": StrategySchema.OPERAND_TYPES,
-        "operators": StrategySchema.OPERATORS,
-        "rule_roles": StrategySchema.RULE_ROLES,
-        "price_fields": StrategySchema.PRICE_FIELDS,
-        "exit_condition_types": StrategySchema.EXIT_CONDITION_TYPES,
-        "timing_modes": StrategySchema.TIMING_MODES,
-        "supported_providers": {
-            "anthropic": {"name": "Anthropic Claude", "models": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6", "claude-sonnet-4-5-20250929"], "api_key_format": "sk-ant-...", "get_key_url": "https://console.anthropic.com/"},
-            "openai": {"name": "OpenAI GPT", "models": ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "o4-mini", "o3", "o3-mini"], "api_key_format": "sk-...", "get_key_url": "https://platform.openai.com/api-keys"},
-            "grok": {"name": "xAI Grok", "models": ["grok-4", "grok-4-1-fast-non-reasoning", "grok-4-1-fast-reasoning", "grok-3", "grok-3-mini"], "api_key_format": "xai-...", "get_key_url": "https://console.x.ai"},
-            "gemini": {"name": "Google Gemini", "models": ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"], "api_key_format": "AIza...", "get_key_url": "https://aistudio.google.com/app/apikey"},
-        },
-        "example_prompt": "Buy when 20-period EMA crosses above 50-period EMA. Sell when RSI is above 70.",
-        "note": "Configure your preferred LLM provider in the Key Manager before using this endpoint.",
-    }
-
-
 @router.post("/ai/build-indicator", response_model=AIIndicatorResponse)
 def ai_build_indicator(request: AIIndicatorRequest) -> AIIndicatorResponse:
     from ai_indicator_builder import build_indicator_from_prompt
@@ -335,6 +308,7 @@ def ai_analyze(request: AIAnalyzeRequest) -> AIAnalyzeResponse:
     from strategy_analyzer import analyze_strategy_chat
     from indicator_analyzer import analyze_indicator_chat
     from run_analyzer import analyze_run_chat
+    from metrics import match_round_trips_from_dicts
 
     if request.subject_type not in ("strategy", "indicator", "run"):
         raise HTTPException(400, "subject_type must be 'strategy', 'indicator', or 'run'")
@@ -372,7 +346,7 @@ def ai_analyze(request: AIAnalyzeRequest) -> AIAnalyzeResponse:
             prices = [p["price"] for p in equity if p.get("price")]
             signal_log = row.get("signal_log", [])
             raw_fills = row.get("trade_log", [])
-            completed_trades = _match_round_trips_from_dicts(raw_fills)
+            completed_trades = match_round_trips_from_dicts(raw_fills)
             run_data = {
                 "run_id": row["id"],
                 "strategy_name": row["strategy_name"],
@@ -408,25 +382,3 @@ def ai_analyze(request: AIAnalyzeRequest) -> AIAnalyzeResponse:
         raise HTTPException(400, str(e)) from e
     except Exception as exc:
         raise HTTPException(500, f"Analysis failed: {str(exc)}") from exc
-
-
-@router.get("/ai/indicator-schema")
-def ai_indicator_schema() -> Dict[str, Any]:
-    return {
-        "operand_types": ["price", "lookback", "sma", "ema", "rsi", "macd", "bollinger"],
-        "expression_node_types": [
-            "const (constant value)", "operand (technical indicator or price)",
-            "binop (binary operation: +, -, *, /, **, %)", "unop (unary operation: neg, abs, sqrt, log)",
-            "clamp (constrain value between lo and hi)", "ifelse (conditional: if cond_left cond_op cond_right then ... else ...)",
-        ],
-        "binary_operators": ["+", "-", "*", "/", "**", "%"],
-        "unary_operators": ["neg", "abs", "sqrt", "log"],
-        "condition_operators": [">", "<", ">=", "<=", "==", "!="],
-        "example_indicators": {
-            "rsi_oversold": {"prompt": "RSI oversold signal: returns 1 when RSI(14) drops below 30", "use_case": "Entry signal detector"},
-            "ma_distance": {"prompt": "Distance from 20-period SMA as percentage", "use_case": "Volatility/deviation measurement"},
-            "momentum_pct": {"prompt": "Price momentum over last 5 bars as percentage change", "use_case": "Trend strength measurement"},
-            "volume_ratio": {"prompt": "Current volume divided by 20-period average volume", "use_case": "Volume confirmation"},
-        },
-        "note": "Indicators generate expression trees that can be used in rule conditions or as custom operands",
-    }

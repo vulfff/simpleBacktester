@@ -26,7 +26,7 @@
 ## Overview
 
 A backtesting app that lets you:
-- Fetch OHLCV data from multiple providers (Alpha Vantage, Polygon, Massive, Yahoo Finance, Finnhub, IEX Cloud)
+- Fetch OHLCV data from multiple providers (Alpha Vantage, Polygon, Massive, Yahoo Finance, Finnhub)
 - Define rule-based trading strategies via a visual builder or AI chat
 - Run backtests with realistic fill simulation
 - Store and compare historical runs via an analytics dashboard
@@ -178,7 +178,7 @@ All SQLite access is centralised here. Never import `sqlite3` directly elsewhere
 - `_sanitize_floats(obj)` — recursively replaces NaN/Inf with None for JSON safety
 
 ### `strategy.py`
-Strategy base class, registry (`STRATEGY_REGISTRY`), and `create_strategy()` factory. Only `rule_set` is registered (by `strategy_rules.py`); legacy MA cross / price change strategies have been removed.
+Strategy base class and `create_strategy()` factory. `rule_set` is the only strategy type (constructed via a late import of `strategy_rules`); legacy MA cross / price change strategies have been removed.
 
 ### Route Modules
 - **`routes_ai.py`** — AI builder/analyzer endpoints. Uses late import `_decode_key_import()` to avoid circular deps with `api.py`.
@@ -208,8 +208,6 @@ Strategy base class, registry (`STRATEGY_REGISTRY`), and `create_strategy()` fac
 | POST | `/ai/build-indicator` | Generate an indicator expression tree from a prompt |
 | POST | `/ai/analyze` | Multi-turn AI chat about a saved strategy or indicator (body: `{subject_type, subject_id, messages, temperature}`) |
 | POST | `/ai/list-models` | Fetch live model list from a provider's API (body: `{provider, api_key}`) |
-| GET | `/ai/schema` | Strategy schema + supported providers/models |
-| GET | `/ai/indicator-schema` | Indicator expression tree schema |
 
 ### Database — Strategies & Indicators
 | Method | Path | Description |
@@ -245,12 +243,6 @@ Strategy base class, registry (`STRATEGY_REGISTRY`), and `create_strategy()` fac
 | POST | `/db/model-keys` | Save a new AI model key |
 | POST | `/db/model-keys/{id}/activate` | Set a key as the active AI model |
 | DELETE | `/db/model-keys/{id}` | Delete a key |
-
-### Encryption
-| Method | Path | Description |
-|---|---|---|
-| POST | `/keys/encrypt` | Encrypt a key with a user password (PBKDF2 + Fernet) |
-| POST | `/keys/decrypt` | Decrypt a previously encrypted key |
 
 ---
 
@@ -311,7 +303,7 @@ Expression tree editor for custom indicators. Supports:
 Multi-key manager. Two panels:
 
 **Data Providers** (service → `data_api_keys` table):
-- Alpha Vantage, Polygon.io, Massive (rebranded Polygon), Yahoo Finance (no key), Finnhub, IEX Cloud
+- Alpha Vantage, Polygon.io, Massive (rebranded Polygon), Yahoo Finance (no key), Finnhub
 - Each key shows: label, service, active indicator, "Use this" button (for inactive keys), delete
 
 **AI Models** (model → `model_api_keys` table):
@@ -475,7 +467,6 @@ All providers return rows shaped as:
 | `massive` | Same API as Polygon, base URL: `api.massive.com` | Yes |
 | `yahoo-finance` | No key required; unofficial API | Yes (`/v1/finance/search`) |
 | `finnhub` | Candle endpoint, `/api/v1/search` for tickers | Yes |
-| `iex-cloud` | Chart endpoint, `/stable/search/{q}` | Yes |
 
 Ticker search endpoint: `GET /data/search-tickers?q=QUERY` → `{"results": [{"symbol": str, "name": str}]}`
 
@@ -536,8 +527,6 @@ Only one key per table can be `active=1` at a time.
 **Storage format**:
 - Unprotected: `base64(raw_key)`
 - Protected: `base64(salt) + ":" + fernet_token` (PBKDF2HMAC-SHA256, 100k iterations)
-
-**Encryption endpoints**: `/keys/encrypt`, `/keys/decrypt` — used by the frontend before saving/after loading protected keys.
 
 **Legacy migration**: if the old `api_keys` table has data and the new tables are empty, the old key is migrated on first startup.
 

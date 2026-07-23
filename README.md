@@ -5,7 +5,7 @@ Beginner-friendly backtesting application for validating algorithmic trading str
 - Rule-based strategy builder with AI assistance
 - Custom indicator expression tree editor
 - Multi-run analytics with equity curves, drawdown, and trade log
-- Supports Alpha Vantage, Polygon, Yahoo Finance, Finnhub, IEX Cloud, and CSV uploads
+- Supports Alpha Vantage, Polygon, Yahoo Finance, Finnhub, and CSV uploads
 
 ## Install
 

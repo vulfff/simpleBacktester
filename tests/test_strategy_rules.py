@@ -163,6 +163,45 @@ class TestCombiners:
                     conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
         assert rule.evaluate(s) is False
 
+    def test_or_fires_when_only_second_true(self):
+        """OR: first condition false, second true → rule fires (combiner on cond2 = 'or')."""
+        s = _push_series([100.0])
+        cond1 = _condition(ConstantOperand(value_=10), ">", ConstantOperand(value_=15), combiner="and")  # False
+        cond2 = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=15), combiner="or")   # True
+        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
+                    conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
+        assert rule.evaluate(s) is True
+
+    def test_or_both_false_does_not_fire(self):
+        s = _push_series([100.0])
+        cond1 = _condition(ConstantOperand(value_=1), ">", ConstantOperand(value_=15), combiner="and")  # False
+        cond2 = _condition(ConstantOperand(value_=2), ">", ConstantOperand(value_=15), combiner="or")   # False
+        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
+                    conditions=[cond1, cond2], timing=TimingMode.EVERY_TICK, quantity=1)
+        assert rule.evaluate(s) is False
+
+    def test_mixed_and_or_folds_left_to_right(self):
+        """((True AND False) OR True) = True — combiner of each cond joins it to the accumulator."""
+        s = _push_series([100.0])
+        t1 = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=15), combiner="and")  # base, True
+        f2 = _condition(ConstantOperand(value_=1),  ">", ConstantOperand(value_=15), combiner="and")  # AND False
+        t3 = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=15), combiner="or")   # OR  True
+        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
+                    conditions=[t1, f2, t3], timing=TimingMode.EVERY_TICK, quantity=1)
+        assert rule.evaluate(s) is True
+
+    def test_mixed_left_to_right_not_boolean_precedence(self):
+        """Strict left-to-right fold, NOT AND-before-OR precedence.
+        ((True OR False) AND False) = False. Precedence would give True OR (False AND False) = True.
+        """
+        s = _push_series([100.0])
+        t1 = _condition(ConstantOperand(value_=20), ">", ConstantOperand(value_=15), combiner="and")  # base, True
+        f2 = _condition(ConstantOperand(value_=1),  ">", ConstantOperand(value_=15), combiner="or")   # OR  False
+        f3 = _condition(ConstantOperand(value_=1),  ">", ConstantOperand(value_=15), combiner="and")  # AND False
+        rule = Rule(name="R", role=RuleRole.ENTRY_LONG,
+                    conditions=[t1, f2, f3], timing=TimingMode.EVERY_TICK, quantity=1)
+        assert rule.evaluate(s) is False
+
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +428,22 @@ class TestSerialisation:
         assert r1.role == r2.role
         assert r1.timing == r2.timing
         assert r1.quantity == r2.quantity
+
+    def test_from_dict_ignores_legacy_rule_combiner_key(self):
+        """Old payloads may carry a top-level rule 'combiner' (now deleted) — ignore, don't crash."""
+        d = {
+            "name": "Legacy", "role": "entry_long",
+            "combiner": "or",  # legacy field removed from Rule; must be tolerated
+            "conditions": [{"left": {"type": "constant", "value": 1},
+                            "operator": ">", "right": {"type": "constant", "value": 0},
+                            "combiner": "and"}],
+            "timing": "on_change", "quantity": 1,
+        }
+        rule = Rule.from_dict(d)
+        assert rule.name == "Legacy"
+        assert rule.role == RuleRole.ENTRY_LONG
+        assert not hasattr(rule, "combiner")           # field is gone
+        assert "combiner" not in rule.to_dict()        # and no longer serialised at rule level
 
     def test_unknown_operand_type_raises(self):
         d = {
