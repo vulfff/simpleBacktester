@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  LineChart, Line, AreaChart, Area,
+  LineChart, Line, AreaChart, Area, ComposedChart,
   XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Brush,
 } from 'recharts'
 
@@ -255,6 +255,123 @@ function ExecBadges({ params }) {
           background: b.color + '18', border: `1px solid ${b.color}44`, color: b.color,
         }}>{b.label}</span>
       ))}
+    </div>
+  )
+}
+
+// ── Monte Carlo panel ─────────────────────────────────────────────────────────
+
+function MonteCarloPanel({ runId }) {
+  const { t } = useTranslation()
+  const [nSims, setNSims] = useState(1000)
+  const [method, setMethod] = useState('trades')
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => { setResult(null); setError(null) }, [runId])
+
+  async function runMc() {
+    setLoading(true); setError(null)
+    try {
+      const resp = await fetch(`${API}/api/backtest/montecarlo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_id: runId, n_sims: nSims, method }),
+      })
+      const body = await resp.json()
+      if (!resp.ok) throw new Error(body.detail || t('analytics.mcError'))
+      setResult(body)
+    } catch (e) {
+      setError(String(e.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const chartData = result?.bands.map(b => ({
+    step: b.step,
+    p50: (b.p50 - 1) * 100,
+    outer: [(b.p5 - 1) * 100, (b.p95 - 1) * 100],
+    inner: [(b.p25 - 1) * 100, (b.p75 - 1) * 100],
+  }))
+
+  const statCards = result ? [
+    { label: t('analytics.mcMedianReturn'), value: fmtPct(result.final_return_pct.p50), pos: result.final_return_pct.p50 >= 0 },
+    { label: t('analytics.mcBadLuck'),      value: fmtPct(result.final_return_pct.p5),  pos: result.final_return_pct.p5 >= 0 },
+    { label: t('analytics.mcWorstDD'),      value: fmtPct(-result.max_drawdown_pct.p95), pos: false, red: true },
+    { label: t('analytics.mcProbLoss'),     value: `${fmtNum(result.prob_loss_pct, 1)}%`, pos: result.prob_loss_pct <= 20 },
+  ] : []
+
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-mute)' }}>
+          {t('analytics.mcTitle')}
+        </div>
+        <select value={nSims} onChange={e => setNSims(Number(e.target.value))} style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+          {[500, 1000, 5000].map(n => (
+            <option key={n} value={n}>{n} {t('analytics.mcSims').toLowerCase()}</option>
+          ))}
+        </select>
+        <select value={method} onChange={e => setMethod(e.target.value)} style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+          <option value="trades">{t('analytics.mcMethodTrades')}</option>
+          <option value="returns">{t('analytics.mcMethodReturns')}</option>
+        </select>
+        <button className="btn btn-sm btn-primary" onClick={runMc} disabled={loading}>
+          {loading ? t('analytics.mcRunning') : t('analytics.mcRun')}
+        </button>
+      </div>
+
+      {error && <div className="alert alert-error" style={{ marginBottom: 10 }}>{error}</div>}
+
+      {result && (
+        <>
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 4, right: 10, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="step" tick={{ fontSize: 10, fill: 'var(--text-mute)' }} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: 'var(--text-mute)' }}
+                  tickFormatter={v => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
+                  width={50}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--panel2)', border: '1px solid var(--border)',
+                    borderRadius: 10, fontSize: '0.78rem',
+                  }}
+                  labelFormatter={v => `#${v}`}
+                  formatter={(value, name) => {
+                    if (Array.isArray(value)) return [`${fmtPct(value[0])} – ${fmtPct(value[1])}`, name === 'outer' ? 'p5–p95' : 'p25–p75']
+                    return [fmtPct(value), 'p50']
+                  }}
+                />
+                <Area dataKey="outer" fill="var(--accent)" fillOpacity={0.12} stroke="none" name="p5–p95" />
+                <Area dataKey="inner" fill="var(--accent)" fillOpacity={0.22} stroke="none" name="p25–p75" />
+                <Line dataKey="p50" stroke="var(--accent)" dot={false} strokeWidth={2} name="p50" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ color: 'var(--text-mute)', fontSize: '0.72rem', marginTop: 6, marginBottom: 12 }}>
+            {t('analytics.mcBandLabel', { n: result.n_sims })}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+            {statCards.map(c => (
+              <div key={c.label} className="stat-card">
+                <div className="stat-label">{c.label}</div>
+                <div className="stat-value" style={{
+                  color: c.red ? 'var(--red)' : c.pos ? 'var(--green)' : 'var(--red)',
+                  fontSize: '1.1rem',
+                }}>
+                  {c.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -821,6 +938,9 @@ export default function Analytics() {
             <div style={{ marginBottom: 14 }}>
               <MetricsGrid metrics={selectedRun.metrics} />
             </div>
+
+            {/* ── Monte Carlo ───────────────────────────────────────────── */}
+            <MonteCarloPanel runId={selectedRun.id} />
 
             {/* ── Chart ─────────────────────────────────────────────────── */}
             <div className="card" style={{ marginBottom: 14 }}>

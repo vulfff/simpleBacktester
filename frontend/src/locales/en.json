@@ -163,7 +163,20 @@
     "thAction": "Action",
     "thSymbol": "Symbol",
     "thQty": "Qty",
-    "thPrice": "Price"
+    "thPrice": "Price",
+    "mcTitle": "Monte Carlo",
+    "mcRun": "Run simulation",
+    "mcRunning": "Simulating…",
+    "mcSims": "Simulations",
+    "mcMethod": "Resample",
+    "mcMethodTrades": "Trades",
+    "mcMethodReturns": "Bar returns",
+    "mcMedianReturn": "Median return",
+    "mcBadLuck": "5th pct return",
+    "mcWorstDD": "Worst-case drawdown (p95)",
+    "mcProbLoss": "Probability of loss",
+    "mcBandLabel": "5–95% envelope of {{n}} resampled equity paths",
+    "mcError": "Monte Carlo failed"
   },
   "strategy": {
     "title": "Strategy Builder",

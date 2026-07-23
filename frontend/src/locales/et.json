@@ -163,7 +163,20 @@
     "thAction": "Tegevus",
     "thSymbol": "Sümbol",
     "thQty": "Kogus",
-    "thPrice": "Hind"
+    "thPrice": "Hind",
+    "mcTitle": "Monte Carlo",
+    "mcRun": "Käivita simulatsioon",
+    "mcRunning": "Simuleerin…",
+    "mcSims": "Simulatsioone",
+    "mcMethod": "Valim",
+    "mcMethodTrades": "Tehingud",
+    "mcMethodReturns": "Baaritootlused",
+    "mcMedianReturn": "Mediaantootlus",
+    "mcBadLuck": "5. protsentiili tootlus",
+    "mcWorstDD": "Halvim langus (p95)",
+    "mcProbLoss": "Kahjumi tõenäosus",
+    "mcBandLabel": "5–95% vahemik {{n}} simuleeritud kapitalikõverast",
+    "mcError": "Monte Carlo ebaõnnestus"
   },
   "strategy": {
     "title": "Strateegiate Loomine",
