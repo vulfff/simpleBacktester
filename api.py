@@ -14,7 +14,7 @@ import io
 import tempfile
 import time
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +24,8 @@ from actionmanager import ActionManager
 from csvparser import CSVTickDataFeed
 from engine import BacktestEngine
 from fill_model import FillModel
-from metrics import compute_metrics
+from metrics import compute_metrics, match_round_trips_from_dicts
+from montecarlo import bar_returns, run_monte_carlo, trade_returns
 
 # Timeframe → approximate trading bars per calendar year
 _BARS_PER_YEAR: Dict[str, int] = {
@@ -220,6 +221,13 @@ class BacktestResult(BaseModel):
     signal_log: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class MonteCarloRequest(BaseModel):
+    run_id: int
+    n_sims: int = 1000
+    method: Literal["trades", "returns"] = "trades"
+    seed: Optional[int] = None
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -339,6 +347,28 @@ async def backtest_upload(
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+@app.post("/api/backtest/montecarlo")
+def backtest_montecarlo(req: MonteCarloRequest):
+    """Bootstrap Monte Carlo resampling of a saved run's trades or bar returns."""
+    run = get_run(req.run_id)
+    if not run:
+        raise HTTPException(404, f"Run {req.run_id} not found")
+
+    if req.method == "trades":
+        returns = trade_returns(match_round_trips_from_dicts(run.get("trade_log") or []))
+        if len(returns) < 5:
+            raise HTTPException(400, "Not enough closed trades for Monte Carlo (need at least 5)")
+    else:
+        returns = bar_returns(run.get("equity_curve") or [])
+        if len(returns) < 10:
+            raise HTTPException(400, "Not enough equity bars for Monte Carlo (need at least 10)")
+
+    result = run_monte_carlo(returns, n_sims=req.n_sims, seed=req.seed)
+    result["run_id"] = req.run_id
+    result["method"] = req.method
+    return result
 
 
 def _rows_to_csv(rows: List[Dict]) -> bytes:
