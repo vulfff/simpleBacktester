@@ -74,26 +74,50 @@ async def _fetch_from_provider(service, api_key, ticker, start_date, end_date, t
 
 # ── Provider implementations ──────────────────────────────────────────────────
 
+def _reject_unsupported_tf(service: str, timeframe: str, supported) -> None:
+    if timeframe not in supported:
+        raise HTTPException(400, f"Timeframe {timeframe!r} is not supported by {service}. "
+                                 f"Supported: {', '.join(supported)}.")
+
+
+def _av_error_check(j: dict) -> None:
+    """Alpha Vantage returns HTTP 200 with an error/info message instead of data."""
+    msg = j.get("Error Message") or j.get("Information") or j.get("Note")
+    if msg:
+        raise HTTPException(502, f"Alpha Vantage: {msg}")
+
+
 async def _av_fetch(client, api_key, ticker, timeframe):
-    TF_MAP = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "4h": "60min", "1d": None}
+    TF_MAP = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min"}
+    _reject_unsupported_tf("alpha-vantage", timeframe, [*TF_MAP, "1d", "1w", "1M"])
     av_tf = TF_MAP.get(timeframe)
-    if av_tf is None or timeframe in ("1d", "1w", "1M"):
-        params = {"function": "TIME_SERIES_DAILY_ADJUSTED", "symbol": ticker, "outputsize": "full", "apikey": api_key}
+    if av_tf is None:
+        # TIME_SERIES_DAILY_ADJUSTED is premium-only; free keys get an "Information"
+        # message and no data, so use the free unadjusted endpoints.
+        FN = {"1d": ("TIME_SERIES_DAILY", "Time Series (Daily)"),
+              "1w": ("TIME_SERIES_WEEKLY", "Weekly Time Series"),
+              "1M": ("TIME_SERIES_MONTHLY", "Monthly Time Series")}
+        fn, series_key = FN[timeframe]
+        params = {"function": fn, "symbol": ticker, "outputsize": "full", "apikey": api_key}
         r = await client.get("https://www.alphavantage.co/query", params=params)
         r.raise_for_status()
-        series = r.json().get("Time Series (Daily)", {})
+        j = r.json()
+        _av_error_check(j)
+        series = j.get(series_key, {})
         rows = []
         for dt, vals in sorted(series.items()):
-            close = float(vals.get("5. adjusted close") or vals.get("4. close", 0))
+            close = float(vals.get("4. close", 0))
             rows.append({"timestamp": dt, "open": float(vals.get("1. open", close)), "high": float(vals.get("2. high", close)),
                           "low": float(vals.get("3. low", close)), "close": close,
-                          "volume": float(vals.get("6. volume", 0)), "symbol": ticker})
+                          "volume": float(vals.get("5. volume", 0)), "symbol": ticker})
         return rows
     else:
         params = {"function": "TIME_SERIES_INTRADAY", "symbol": ticker, "interval": av_tf, "outputsize": "full", "apikey": api_key}
         r = await client.get("https://www.alphavantage.co/query", params=params)
         r.raise_for_status()
-        series = r.json().get(f"Time Series ({av_tf})", {})
+        j = r.json()
+        _av_error_check(j)
+        series = j.get(f"Time Series ({av_tf})", {})
         rows = []
         for dt, vals in sorted(series.items()):
             close = float(vals.get("4. close", 0))
@@ -122,10 +146,11 @@ async def _polygon_fetch(client, api_key, ticker, start_date, end_date, timefram
 
 
 async def _yahoo_fetch(client, ticker, start_date, end_date, timeframe):
-    TF_MAP = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "60m", "4h": "1h", "1d": "1d", "1w": "1wk", "1M": "1mo"}
-    yf_tf = TF_MAP.get(timeframe, "1d")
+    TF_MAP = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "60m", "1d": "1d", "1w": "1wk", "1M": "1mo"}
+    _reject_unsupported_tf("yahoo-finance", timeframe, list(TF_MAP))
+    yf_tf = TF_MAP[timeframe]
     def _to_ts(s): return int(_dt.datetime.strptime(s[:10], "%Y-%m-%d").timestamp())
-    params = {"period1": _to_ts(start_date), "period2": _to_ts(end_date), "interval": yf_tf, "includeTimestamps": "true"}
+    params = {"period1": _to_ts(start_date), "period2": _to_ts(end_date), "interval": yf_tf}
     r = await client.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
                          params=params, headers={"User-Agent": "Mozilla/5.0"})
     r.raise_for_status()
@@ -155,9 +180,13 @@ async def _yahoo_fetch(client, ticker, start_date, end_date, timeframe):
 
 async def _finnhub_fetch(client, api_key, ticker, start_date, end_date, timeframe):
     TF_MAP = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "1d": "D", "1w": "W", "1M": "M"}
+    _reject_unsupported_tf("finnhub", timeframe, list(TF_MAP))
     def _to_ts(s): return int(_dt.datetime.strptime(s[:10], "%Y-%m-%d").timestamp())
-    params = {"symbol": ticker, "resolution": TF_MAP.get(timeframe, "D"), "from": _to_ts(start_date), "to": _to_ts(end_date), "token": api_key}
+    params = {"symbol": ticker, "resolution": TF_MAP[timeframe], "from": _to_ts(start_date), "to": _to_ts(end_date), "token": api_key}
     r = await client.get("https://finnhub.io/api/v1/stock/candle", params=params)
+    if r.status_code == 403:
+        raise HTTPException(400, "Finnhub stock candles require a paid plan (free tier no longer has access). "
+                                 "Use another data provider or upgrade the Finnhub key.")
     r.raise_for_status()
     j = r.json()
     if j.get("s") == "no_data":

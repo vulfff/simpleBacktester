@@ -742,8 +742,10 @@ class OpenAIProvider(AIProvider):
 
     def _call_api_multi(self, messages: list, system_prompt: str, temperature: float) -> str:
         import httpx
-        # o1/o3/o4 reasoning models don't accept temperature or a system role message
+        # o1/o3/o4 reasoning models don't accept temperature or a system role message;
+        # gpt-5 models accept a system message but only the default temperature.
         is_reasoning = self.model_name.startswith(("o1", "o3", "o4"))
+        no_temperature = is_reasoning or self.model_name.startswith("gpt-5")
         full_msgs: list = []
         if not is_reasoning:
             full_msgs.append({"role": "system", "content": system_prompt})
@@ -760,7 +762,7 @@ class OpenAIProvider(AIProvider):
             self.TOKEN_LIMIT_PARAM: 4096,
             "messages": full_msgs,
         }
-        if not is_reasoning:
+        if not no_temperature:
             payload["temperature"] = temperature
         try:
             with httpx.Client(timeout=120.0) as client:
