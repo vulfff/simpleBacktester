@@ -8,6 +8,10 @@ This tool was developed as part of the Bachelor's thesis **"Design and Comparati
 
 The thesis analysed six existing backtesting tools (backtrader, ZipLine, QuantConnect, TradingView, VectorBT, Jesse), found that none offer an integrated no-code approach to strategy building, and designed this tool to close that gap. In a comparative user evaluation against Jesse (the strongest existing baseline), the no-code builder raised the end-to-end test completion rate from 0% to 20%, and enabling the integrated AI-assistance raised it to 88.9% — a statistically significant improvement (McNemar exact test, p=0.031), with system usability scores improving significantly at every step (Wilcoxon signed-rank, Holm-corrected).
 
+## Development status
+
+The thesis describes the tool as it stood at defence. Development has continued since — recent additions include Monte Carlo analysis (bootstrap resampling, fan chart, risk-of-ruin), a general codebase cleanup, and ongoing usability fixes from the issues surfaced in the thesis user evaluation. See the [commit history](https://github.com/vulfff/simpleBacktester/commits/main) for current progress; features described in the thesis's Future Work section (multi-asset backtesting, live trading, dividend support) are candidates for upcoming versions.
+
 ## Features
 
 - **Rule-based strategy builder** — compose entry/exit rules visually from indicators, comparisons, and logic operators, or describe the strategy in plain English and let the AI chat build it for you
