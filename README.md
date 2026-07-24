@@ -4,7 +4,7 @@ Beginner-friendly desktop app for building and validating algorithmic trading st
 
 ## About this project
 
-This tool was developed as part of the Bachelor's thesis **"Design and Comparative Evaluation of a No-Code Approach to Backtesting Algorithmic Trading Strategies"** by Oliver-Markus Vulf (University of Tartu, Institute of Computer Science, 2026).
+This tool was developed as part of the Bachelor's thesis **"Design and Comparative Evaluation of a No-Code Approach to Backtesting Algorithmic Trading Strategies"** by Oliver-Markus Vulf (University of Tartu, Institute of Computer Science, defended 2026). The thesis is published in the [University of Tartu thesis repository](https://dspace.ut.ee/).
 
 The thesis analysed six existing backtesting tools (backtrader, ZipLine, QuantConnect, TradingView, VectorBT, Jesse), found that none offer an integrated no-code approach to strategy building, and designed this tool to close that gap. In a comparative user evaluation against Jesse (the strongest existing baseline), the no-code builder raised the end-to-end test completion rate from 0% to 20%, and enabling the integrated AI-assistance raised it to 88.9% — a statistically significant improvement (McNemar exact test, p=0.031), with system usability scores improving significantly at every step (Wilcoxon signed-rank, Holm-corrected).
 
